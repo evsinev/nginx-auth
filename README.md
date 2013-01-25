@@ -24,7 +24,6 @@ Example config:
             internal;
             proxy_set_header nginx_location "/internal-srvlog";
             
-            proxy_pass http://176.9.227.251:8080/srvlog ;
-            #proxy_pass http://127.0.0.1:9091/srvlog;
+            proxy_pass http://127.0.0.1:9091/srvlog;
         }
 ```
