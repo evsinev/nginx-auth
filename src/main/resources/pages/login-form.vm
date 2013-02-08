@@ -129,6 +129,7 @@
     <form action="$FORM_ACTION" method="post" id="form">
 
         <input type="hidden" id="$BACK_URL_NAME" name="$BACK_URL_NAME" value="$BACK_URL_VALUE">
+        <input type="hidden" id="j_nonce" name="j_nonce" value="$NONCE">
 
         <div class="form-row">
             <label class='form-label' for="j_username">Username</label>

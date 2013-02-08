@@ -1,15 +1,18 @@
 package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.service.IAuthService;
+import com.payneteasy.nginxauth.service.INonceManager;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import com.payneteasy.nginxauth.service.ITokenManager;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
+import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
 import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
 import com.payneteasy.nginxauth.util.CookiesManager;
 import com.payneteasy.nginxauth.util.HttpRequestUtil;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import com.payneteasy.nginxauth.util.VelocityBuilder;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +21,11 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URL;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 /**
  *
@@ -32,14 +39,32 @@ public class LoginFormServlet extends HttpServlet {
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         HttpRequestUtil.logDebug(aRequest);
 
-        String backUrl  =  aRequest.getParameter(BACK_URL_NAME);
-        String username = aRequest.getParameter("j_username");
-        String password = aRequest.getParameter("j_password");
-        String otp      = aRequest.getParameter("j_code");
+        String backUrl  = escape(aRequest.getParameter(BACK_URL_NAME));
+        String username = escape(aRequest.getParameter("j_username"));
+        String password = escape(aRequest.getParameter("j_password"));
+        String otp      = escape(aRequest.getParameter("j_code"));
+        String nonce    = escape(aRequest.getParameter("j_nonce"));
 
         if(StringUtils.isEmpty(backUrl)) {
-            showErrorForm(aResponse, "", "", "Back url is empty");
+            showErrorForm(aResponse, "", "",  "Back url is empty");
             return ;
+        }
+
+        try {
+            new URL(backUrl);
+        } catch (Exception e) {
+            showErrorForm(aResponse, "", "",  "Bad back url");
+            return ;
+        }
+
+        if(StringUtils.isEmpty(nonce)) {
+            showErrorForm(aResponse, backUrl, "",  "Nonce is empty");
+            return;
+        }
+
+        if(!theNonceManager.checkNonce(nonce)) {
+            showErrorForm(aResponse, backUrl, "",  "Invalid nonce");
+            return;
         }
 
         if(StringUtils.isEmpty(username)) {
@@ -79,6 +104,15 @@ public class LoginFormServlet extends HttpServlet {
 
     }
 
+    private String escape(String aText) {
+        if(aText!=null) {
+            if(aText.length()>50) aText = aText.substring(0, 50);
+            return StringEscapeUtils.escapeHtml4(aText);
+        } else {
+            return null;
+        }
+    }
+
     private void showErrorForm(HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage) throws IOException {
         VelocityBuilder velocity = new VelocityBuilder();
         velocity.add("BACK_URL_NAME",  BACK_URL_NAME);
@@ -86,6 +120,7 @@ public class LoginFormServlet extends HttpServlet {
         velocity.add("FORM_ACTION", "/auth/login");
         velocity.add("REASON", aErrorMessage);
         velocity.add("USERNAME", aUsername);
+        velocity.add("NONCE", theNonceManager.addNonce());
         velocity.processTemplate(LoginFormServlet.class, "/pages/login-form.vm", aResponse.getWriter());
     }
 
@@ -106,5 +141,6 @@ public class LoginFormServlet extends HttpServlet {
 
     private final IAuthService theAuthService = new AuthServiceImpl();
     private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
+    private INonceManager theNonceManager = NonceManagerImpl.getInstance();
 
 }

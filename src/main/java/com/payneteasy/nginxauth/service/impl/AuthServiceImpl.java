@@ -23,10 +23,6 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public void authenticate(String aUsername, String aPassword, long aCode) throws AuthenticationException {
 
-        if(!theOneTimePasswordService.checkCode(aUsername, aCode)) {
-            throw new AuthenticationException("Verification code is invalid");
-        }
-
         Properties env = new Properties();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, SettingsManager.getLdapUrl());
@@ -50,6 +46,11 @@ public class AuthServiceImpl implements IAuthService {
             LOG.error("Can't connect to ldap: "+e.getExplanation(), e);
             throw new AuthenticationException(e.getExplanation());
         }
+
+        if(!theOneTimePasswordService.checkCode(aUsername, aCode)) {
+            throw new AuthenticationException("Verification code is invalid");
+        }
+
     }
 
     private IOneTimePasswordService theOneTimePasswordService = new OneTimePasswordServiceImpl();
