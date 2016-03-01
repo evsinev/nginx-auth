@@ -29,11 +29,11 @@ public class TokenManagerImpl implements ITokenManager {
         theLock.writeLock().lock();
         try {
 
-            if(theMap.size()>100) {
-                Iterator<Token> tokens= theMap.values().iterator();
+            if (theMap.size() > 100) {
+                Iterator<Token> tokens = theMap.values().iterator();
                 while (tokens.hasNext()) {
                     Token token = tokens.next();
-                    if(!isValid(token)) {
+                    if (!isValid(token)) {
                         LOG.info("Removing token {}", token.id);
                         tokens.remove();
                     }
@@ -55,11 +55,11 @@ public class TokenManagerImpl implements ITokenManager {
     @Override
     public boolean validateToken(String aTokenValue) {
 
-        Token token = null;
+        Token token;
         theLock.readLock().lock();
         try {
             token = theMap.get(aTokenValue);
-            if(token==null) {
+            if (token == null) {
                 LOG.info("Token {} not found", aTokenValue);
                 LOG.info("Tokens  {}", theMap);
                 return false;
@@ -69,28 +69,25 @@ public class TokenManagerImpl implements ITokenManager {
         }
 
 
-        //noinspection SynchronizationOnLocalVariableOrMethodParameter
-        synchronized (token) {
-            if(isValid(token)) {
-                theLock.writeLock().lock();
-                try {
-                    theMap.remove(aTokenValue);
-                    return false;
-                } finally {
-                    theLock.writeLock().unlock();
-                }
-            } else {
-                token.lastAccessTime = System.currentTimeMillis();
-                return true;
+        if (isValid(token)) {
+            theLock.writeLock().lock();
+            try {
+                theMap.remove(aTokenValue);
+                return false;
+            } finally {
+                theLock.writeLock().unlock();
             }
+        } else {
+            token.lastAccessTime = System.currentTimeMillis();
+            return true;
         }
     }
 
     public boolean isValid(Token aToken) {
         long currentTime = System.currentTimeMillis();
         long minTime = currentTime - (15 * 1000 * 60);
-        boolean valid =  aToken.lastAccessTime < minTime;
-        LOG.info("Token {} [time: {}] is {}", new Object[] {aToken.id, aToken.lastAccessTime, valid? "valid":"not valid"});
+        boolean valid = aToken.lastAccessTime < minTime;
+        LOG.info("Token {} [time: {}] is {}", new Object[]{aToken.id, aToken.lastAccessTime, valid ? "valid" : "not valid"});
         return valid;
     }
 

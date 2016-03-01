@@ -3,6 +3,7 @@ package com.payneteasy.nginxauth.service.impl;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import com.payneteasy.nginxauth.util.SettingsManager;
+import com.payneteasy.nginxauth.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +13,8 @@ import javax.naming.Context;
 import javax.naming.NamingException;
 import javax.naming.ldap.InitialLdapContext;
 import java.util.Properties;
+
+import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
 
 /**
  *
@@ -23,11 +26,15 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public void authenticate(String aUsername, String aPassword, long aCode) throws AuthenticationException {
 
+        String user = String.format("cn=%s,%s"
+                , escapeDN(aUsername)
+                , SettingsManager.getLdapUsersDn()
+        );
+        LOG.debug("Connecting to ldap with {}...", user);
+
         Properties env = new Properties();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, SettingsManager.getLdapUrl());
-        String user = String.format("cn=%s,%s", aUsername, SettingsManager.getLdapUsersDn());
-        LOG.debug("Connecting to ldap with {}...", user);
         env.put(Context.SECURITY_PRINCIPAL, user);
         env.put(Context.SECURITY_CREDENTIALS, aPassword);
 
