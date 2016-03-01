@@ -15,11 +15,11 @@ import org.apache.commons.codec.binary.Base32;
  *
  * Java Server side class for Google Authenticator's TOTP generator
  * Thanks to Enrico's blog for the sample code:
- * @see http://thegreyblog.blogspot.com/2011/12/google-authenticator-using-it-in-your.html
+ * http://thegreyblog.blogspot.com/2011/12/google-authenticator-using-it-in-your.html
  *
  *
- * @see http://code.google.com/p/google-authenticator
- * @see http://tools.ietf.org/id/draft-mraihi-totp-timebased-06.txt
+ *  http://code.google.com/p/google-authenticator
+ *  http://tools.ietf.org/id/draft-mraihi-totp-timebased-06.txt
  */
 public class GoogleAuthenticator {
 
@@ -34,7 +34,7 @@ public class GoogleAuthenticator {
      * set the windows size. This is an integer value representing the number of 30 second windows we allow
      * The bigger the window, the more tolerant of clock skew we are.
      *
-     * @param s window size - must be >=1 and <=17.  Other values are ignored
+     * @param s window size - must be greater or equals 1 and less or equals 17.  Other values are ignored
      */
     public void setWindowSize(int s) {
         if( s >= 1 && s <= 17 )
