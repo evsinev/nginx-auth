@@ -2,13 +2,58 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <parent>
+        <groupId>org.sonatype.oss</groupId>
+        <artifactId>oss-parent</artifactId>
+        <version>4</version>
+    </parent>
+
     <groupId>com.payneteasy</groupId>
     <artifactId>nginx-auth</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0-1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>nginx-auth</name>
-    <url>http://maven.apache.org</url>
+    <url>https://github.com/evsinev/nginx-auth</url>
+
+    <scm>
+        <connection>scm:git:git@github.com:evsinev/nginx-auth.git</connection>
+        <developerConnection>scm:git:git@github.com:evsinev/nginx-auth.git</developerConnection>
+        <url>https://github.com/evsinev/nginx-auth</url>
+    </scm>
+
+    <developers>
+        <developer>
+            <id>esinev</id>
+            <name>Evgeniy Sinev</name>
+            <email>esinev@gmail.com</email>
+        </developer>
+    </developers>
+
+    <!--
+-      Distributions
+-->
+    <distributionManagement>
+        <repository>
+            <id>ber-tlv-release</id>
+            <name>sonatype oss RELEASE repository</name>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+        </repository>
+
+        <snapshotRepository>
+            <id>ber-tlv-snapshot</id>
+            <name>sonatype oss SNAPSHOT repository</name>
+            <url>http://oss.sonatype.org/content/repositories/snapshots</url>
+            <uniqueVersion>false</uniqueVersion>
+        </snapshotRepository>
+
+        <site>
+            <id>local-site</id>
+            <name>Store only on local disk</name>
+            <url>file:///tmp/nginx-auth</url>
+        </site>
+    </distributionManagement>
+
 
     <properties>
         <slf4j.version>1.6.2</slf4j.version>
@@ -142,15 +187,52 @@
             </plugin>
 
             <plugin>
+                <inherited>true</inherited>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-idea-plugin</artifactId>
-                <version>2.2</version>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>2.3.2</version>
                 <configuration>
-                    <downloadSources>true</downloadSources>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                    <debug>true</debug>
                 </configuration>
             </plugin>
 
         </plugins>
     </build>
+
+    <!-- signs artifacts. This profile will be activated when the value of maven property performRelease is true -->
+    <profiles>
+        <profile>
+            <id>release-profile</id>
+            <activation>
+                <property>
+                    <name>performRelease</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+
+                    <!-- SIGNS -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>1.1</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 
 </project>
