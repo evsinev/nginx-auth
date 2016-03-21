@@ -1,9 +1,6 @@
 package com.payneteasy.nginxauth.servlet;
 
-import com.payneteasy.nginxauth.service.IAuthService;
-import com.payneteasy.nginxauth.service.INonceManager;
-import com.payneteasy.nginxauth.service.IOneTimePasswordService;
-import com.payneteasy.nginxauth.service.ITokenManager;
+import com.payneteasy.nginxauth.service.*;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
 import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
 import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
@@ -22,10 +19,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URL;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.WeakHashMap;
 
 /**
  *
@@ -33,7 +26,8 @@ import java.util.WeakHashMap;
 public class LoginFormServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(LoginFormServlet.class);
 
-    private static final String BACK_URL_NAME = SettingsManager.getBackUrlName();
+    private static final String  BACK_URL_NAME = SettingsManager.getBackUrlName();
+    private static final boolean OTP_ENABLED   = SettingsManager.isOtpEnabled();
 
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
@@ -77,51 +71,92 @@ public class LoginFormServlet extends HttpServlet {
             return;
         }
 
-        if(StringUtils.isEmpty(otp)) {
-            showErrorForm(aResponse, backUrl, username, "Verification code is empty");
-            return;
-        }
-
-        long verificationCode = 0 ;
         try {
-            verificationCode = Long.parseLong(otp);
-        } catch (Exception e) {
-            LOG.warn("Verification code is not number [user:{}, code:{}]", username, otp);
-        }
+            // username, password, OTP
+            if (OTP_ENABLED) {
+                if (StringUtils.isEmpty(otp)) {
+                    showErrorForm(aResponse, backUrl, username, "Verification code is empty");
+                    return;
+                }
 
-        try {
-            theAuthService.authenticate(username, password, verificationCode);
+                long verificationCode = 0;
+                try {
+                    verificationCode = Long.parseLong(otp);
+                } catch (Exception e) {
+                    LOG.warn("Verification code is not number [user:{}, code:{}]", username, otp);
+                }
+
+                theAuthService.authenticate(username, password, verificationCode, canCheckAccess());
+
+            } else {
+                // username, password
+                theAuthService.authenticate(username, password, canCheckAccess());
+            }
+
             LOG.warn("User {} login success", username);
+
+            doCustomAction(username, password, aRequest);
+
             CookiesManager cookies = new CookiesManager(aRequest, aResponse);
             cookies.add(SettingsManager.getTokenCookieName(), theTokenManager.createToken());
+            cookies.addUnsecure(SettingsManager.getTokenCookieAssignedName(), System.currentTimeMillis() + "");
             aResponse.sendRedirect(backUrl);
 
+        } catch (ChangePasswordException e) {
+            LOG.warn("Failed to change password for user "+username + " "+e.getMessage());
+            showChangePasswordForm(aResponse, backUrl, username, e.getMessage());
+
+        } catch (UserMustChangePasswordException e) {
+            LOG.warn("User {} must change password", username);
+            showChangePasswordForm(aResponse, backUrl, username, "User must change password");
+
         } catch (Exception e) {
-            LOG.warn("User {} login failed: {}", username, e.getMessage());
+            LOG.error("User "+username+" login failed", e);
             showErrorForm(aResponse, backUrl, username, e.getMessage());
         }
 
 
     }
 
-    private String escape(String aText) {
+    public boolean canCheckAccess() {
+        return true;
+    }
+
+    public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
+
+    }
+
+    String escape(String aText) {
         if(aText!=null) {
-            if(aText.length()>50) aText = aText.substring(0, 50);
+            if(aText.length()>50) {
+                aText = aText.substring(0, 50);
+            }
             return StringEscapeUtils.escapeHtml4(aText);
         } else {
             return null;
         }
     }
 
+    private void showChangePasswordForm(HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage) throws IOException {
+        showForm("/auth/change-password", aResponse, backUrl, aUsername, aErrorMessage, "/pages/change-password-form.vm");
+    }
+
     private void showErrorForm(HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage) throws IOException {
+        showForm("/auth/login", aResponse, backUrl, aUsername, aErrorMessage, "/pages/login-form.vm");
+    }
+
+    private void showForm(String aAction, HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage, String aFormTemplate) throws IOException {
         VelocityBuilder velocity = new VelocityBuilder();
-        velocity.add("BACK_URL_NAME",  BACK_URL_NAME);
-        velocity.add("BACK_URL_VALUE", backUrl);
-        velocity.add("FORM_ACTION", "/auth/login");
-        velocity.add("REASON", aErrorMessage);
-        velocity.add("USERNAME", aUsername);
-        velocity.add("NONCE", theNonceManager.addNonce());
-        velocity.processTemplate(LoginFormServlet.class, "/pages/login-form.vm", aResponse.getWriter());
+
+        velocity.add("BACK_URL_NAME"  ,  BACK_URL_NAME              );
+        velocity.add("BACK_URL_VALUE" , backUrl                     );
+        velocity.add("FORM_ACTION"    , aAction                     );
+        velocity.add("REASON"         , aErrorMessage               );
+        velocity.add("USERNAME"       , aUsername                   );
+        velocity.add("NONCE"          , theNonceManager.addNonce()  );
+        velocity.add("OTP_ENABLED"    , OTP_ENABLED                 );
+
+        velocity.processTemplate(LoginFormServlet.class, aFormTemplate, aResponse.getWriter());
     }
 
 //    private String createBackRedirectUrl(String aBackUrl) {
@@ -139,7 +174,7 @@ public class LoginFormServlet extends HttpServlet {
 //        return sb.toString();
 //    }
 
-    private final IAuthService theAuthService = new AuthServiceImpl();
+    final IAuthService theAuthService = new AuthServiceImpl();
     private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
     private INonceManager theNonceManager = NonceManagerImpl.getInstance();
 

@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth;
 
+import com.payneteasy.nginxauth.servlet.ChangePasswordServlet;
 import com.payneteasy.nginxauth.servlet.CheckAccessServlet;
 import com.payneteasy.nginxauth.servlet.LoginFormServlet;
 import com.payneteasy.nginxauth.servlet.ShowLoginFormServlet;
@@ -28,9 +29,11 @@ public class WebServer {
         server.setConnectors(new Connector[]{connector});
 
         ServletContextHandler context  = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
-        context.addServlet(CheckAccessServlet.class,  "/*").setAsyncSupported(true);
-        context.addServlet(LoginFormServlet.class,  getAuthUrl()+"/login").setAsyncSupported(true);
-        context.addServlet(ShowLoginFormServlet.class,  getAuthUrl()+"/*").setAsyncSupported(true);
+
+        context.addServlet(CheckAccessServlet.class     ,  "/*"                              ).setAsyncSupported(true);
+        context.addServlet(ShowLoginFormServlet.class   ,  getAuthUrl() + "/*"               ).setAsyncSupported(true);
+        context.addServlet(LoginFormServlet.class       ,  getAuthUrl() + "/login"           ).setAsyncSupported(true);
+        context.addServlet(ChangePasswordServlet.class  ,  getAuthUrl() + "/change-password" ).setAsyncSupported(true);
 
         server.setHandler(context);
 

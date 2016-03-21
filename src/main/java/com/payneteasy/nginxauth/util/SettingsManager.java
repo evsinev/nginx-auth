@@ -15,14 +15,17 @@ public class SettingsManager {
     private static final Logger LOG = LoggerFactory.getLogger(SettingsManager.class);
 
     enum Setting {
-        TOKEN_COOKIE_NAME("AUTH_TOKEN")
-        , BACK_URL_NAME("back")
-        , AUTH_URL("/auth")
-        , INTERNAL_PREFIX("/internal-")
-        , X_ACCEL_REDIRECT("X-Accel-Redirect")
-        , CONNECTOR_PORT("9091")
-        , LDAP_URL("ldaps://localhost:636")
-        , LDAP_USERS_DN("ou=users,dc=example,dc=com")
+          TOKEN_COOKIE_NAME          ( "AUTH_TOKEN"                 )
+        , TOKEN_COOKIE_ASSIGNED_NAME ( "AUTH_TOKEN_ASSIGNED"        )
+        , BACK_URL_NAME              ( "back"                       )
+        , AUTH_URL                   ( "/auth"                      )
+        , INTERNAL_PREFIX            ( "/internal-"                 )
+        , X_ACCEL_REDIRECT           ( "X-Accel-Redirect"           )
+        , CONNECTOR_PORT             ( "9091"                       )
+        , LDAP_URL                   ( "ldaps://localhost:636"      )
+        , LDAP_USERS_DN              ( "ou=users,dc=example,dc=com" )
+        , OTP_ENABLED                ( "true"                       )
+        , SECURE_COOKIE              ( "true"                       )
         ;
 
         private Setting(String aDefaultValue) {
@@ -52,12 +55,24 @@ public class SettingsManager {
         }
     }
 
+    private static String get(Setting aSetting) {
+        return  System.getProperty(aSetting.name(), aSetting.defaultValue);
+    }
+
+    private static boolean getBoolean(Setting aSetting) {
+        return Boolean.parseBoolean(get(aSetting));
+    }
+
     public static int getConnectorPort() {
         return Integer.parseInt(get(CONNECTOR_PORT));
     }
 
     public static String getTokenCookieName() {
         return get(TOKEN_COOKIE_NAME);
+    }
+
+    public static String getTokenCookieAssignedName() {
+        return get(TOKEN_COOKIE_ASSIGNED_NAME);
     }
 
     public static String getBackUrlName() {
@@ -84,8 +99,12 @@ public class SettingsManager {
         return get(LDAP_USERS_DN);
     }
 
-    private static String get(Setting aSetting) {
-        return  System.getProperty(aSetting.name(), aSetting.defaultValue);
+    public static boolean isOtpEnabled() {
+        return getBoolean(OTP_ENABLED);
+    }
+
+    public static boolean getSecureCookie() {
+        return getBoolean(SECURE_COOKIE);
     }
 
 }

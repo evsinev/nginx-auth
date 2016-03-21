@@ -30,8 +30,6 @@ public class CheckAccessServlet extends HttpServlet {
     private static final String INTERNAL_PREFIX   = SettingsManager.getInternalPrefix();
     private static final String X_ACCEL_REDIRECT  = SettingsManager.getXAccessRedirect();
 
-
-
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
 
@@ -54,12 +52,24 @@ public class CheckAccessServlet extends HttpServlet {
         sb.append("?");
         sb.append(BACK_URL_NAME);
         sb.append("=");
+        String requestUrl = removeDangerousCharacters(getRequestUrl(aRequest));
         try {
-            sb.append(URLEncoder.encode(getRequestUrl(aRequest), "utf-8"));
+            sb.append(URLEncoder.encode(requestUrl, "utf-8"));
         } catch (UnsupportedEncodingException e) {
             throw new IllegalStateException("Can't create url", e);
         }
         return sb.toString();
+    }
+
+    private static String removeDangerousCharacters(String aRequestUrl) {
+        if(aRequestUrl == null) {
+            return null;
+        }
+
+        if(aRequestUrl.contains("<script")) {
+            return aRequestUrl.replace("<script", "noscript");
+        }
+        return aRequestUrl;
     }
 
     private boolean isValidToken(HttpServletRequest aRequest, HttpServletResponse aResponse) {

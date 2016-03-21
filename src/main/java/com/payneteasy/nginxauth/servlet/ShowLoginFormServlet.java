@@ -2,6 +2,7 @@ package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.service.INonceManager;
 import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
+import com.payneteasy.nginxauth.util.CookiesManager;
 import com.payneteasy.nginxauth.util.HttpRequestUtil;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import com.payneteasy.nginxauth.util.VelocityBuilder;
@@ -14,6 +15,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URL;
+
+import static com.payneteasy.nginxauth.util.SettingsManager.getTokenCookieAssignedName;
+import static com.payneteasy.nginxauth.util.SettingsManager.getTokenCookieName;
 
 /**
  *
@@ -39,6 +43,12 @@ public class ShowLoginFormServlet extends HttpServlet {
             velocity.add("REASON", "Invalid back url");
         }
         velocity.add("NONCE", theNonceManager.addNonce());
+
+        // check http only
+        CookiesManager cookiesManager = new CookiesManager(aRequest, aResponse);
+        if(!cookiesManager.hasCookie(getTokenCookieName()) && cookiesManager.hasCookie(getTokenCookieAssignedName())) {
+            velocity.add("REASON", "Please check secure cookie. Do not use http when secure cookies is enabled.");
+        }
 
         velocity.processTemplate(ShowLoginFormServlet.class, "/pages/login-form.vm", aResponse.getWriter());
 

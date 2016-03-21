@@ -11,6 +11,8 @@ import java.util.Map;
  */
 public class CookiesManager {
 
+    private static final boolean SECURE_COOKIE = SettingsManager.getSecureCookie();
+
     public CookiesManager(HttpServletRequest aRequest, HttpServletResponse aResponse) {
         theRequest = aRequest;
         theResponse = aResponse;
@@ -36,11 +38,22 @@ public class CookiesManager {
 
     public void add(String aKey, String aValue) {
         Cookie cookie = new Cookie(aKey, aValue);
-//        cookie.setHttpOnly(true);
-        // cookie.setSecure(true);
+
+        if(SECURE_COOKIE) {
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true);
+        }
+
         cookie.setPath("/");
         cookie.setMaxAge(-1); // will be deleted when the Web browser exits
 
+        theResponse.addCookie(cookie);
+    }
+
+    public void addUnsecure(String aKey, String aValue) {
+        Cookie cookie = new Cookie(aKey, aValue);
+        cookie.setPath("/");
+        cookie.setMaxAge(-1); // will be deleted when the Web browser exits
         theResponse.addCookie(cookie);
     }
 
@@ -48,4 +61,7 @@ public class CookiesManager {
     private final HttpServletRequest theRequest;
     private final HttpServletResponse theResponse;
 
+    public boolean hasCookie(String aCookieName) {
+        return getCookieValue(aCookieName) != null;
+    }
 }
