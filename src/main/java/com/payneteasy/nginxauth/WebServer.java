@@ -1,9 +1,6 @@
 package com.payneteasy.nginxauth;
 
-import com.payneteasy.nginxauth.servlet.ChangePasswordServlet;
-import com.payneteasy.nginxauth.servlet.CheckAccessServlet;
-import com.payneteasy.nginxauth.servlet.LoginFormServlet;
-import com.payneteasy.nginxauth.servlet.ShowLoginFormServlet;
+import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
@@ -34,6 +31,7 @@ public class WebServer {
         context.addServlet(ShowLoginFormServlet.class   ,  getAuthUrl() + "/*"               ).setAsyncSupported(true);
         context.addServlet(LoginFormServlet.class       ,  getAuthUrl() + "/login"           ).setAsyncSupported(true);
         context.addServlet(ChangePasswordServlet.class  ,  getAuthUrl() + "/change-password" ).setAsyncSupported(true);
+        context.addServlet(LogoutServlet.class          ,  getAuthUrl() + "/logout"          ).setAsyncSupported(true);
 
         server.setHandler(context);
 

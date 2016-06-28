@@ -26,6 +26,7 @@ public class ShowLoginFormServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(ShowLoginFormServlet.class);
 
     private static final String BACK_URL_NAME = SettingsManager.getBackUrlName();
+    private static final boolean OTP_ENABLED  = SettingsManager.isOtpEnabled();
 
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
@@ -42,7 +43,8 @@ public class ShowLoginFormServlet extends HttpServlet {
         } catch (Exception e) {
             velocity.add("REASON", "Invalid back url");
         }
-        velocity.add("NONCE", theNonceManager.addNonce());
+        velocity.add("NONCE"       , theNonceManager.addNonce());
+        velocity.add("OTP_ENABLED" , OTP_ENABLED               );
 
         // check http only
         CookiesManager cookiesManager = new CookiesManager(aRequest, aResponse);

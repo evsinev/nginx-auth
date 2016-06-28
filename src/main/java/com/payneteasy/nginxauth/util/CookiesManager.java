@@ -13,6 +13,10 @@ public class CookiesManager {
 
     private static final boolean SECURE_COOKIE = SettingsManager.getSecureCookie();
 
+    private Map<String, Cookie> theMap;
+    private final HttpServletRequest theRequest;
+    private final HttpServletResponse theResponse;
+
     public CookiesManager(HttpServletRequest aRequest, HttpServletResponse aResponse) {
         theRequest = aRequest;
         theResponse = aResponse;
@@ -57,11 +61,19 @@ public class CookiesManager {
         theResponse.addCookie(cookie);
     }
 
-    private Map<String, Cookie> theMap;
-    private final HttpServletRequest theRequest;
-    private final HttpServletResponse theResponse;
-
     public boolean hasCookie(String aCookieName) {
         return getCookieValue(aCookieName) != null;
+    }
+
+    public void clear() {
+        Cookie[] cookies = theRequest.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                cookie.setValue("");
+                cookie.setPath("/");
+                cookie.setMaxAge(0);
+                theResponse.addCookie(cookie);
+            }
+        }
     }
 }
