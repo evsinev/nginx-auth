@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth.util;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
@@ -22,5 +23,13 @@ public class StringUtilsTest {
     public void tesEscapeLDAPSearchFilter() {
         assertEquals("No special characters to escape", "Hi This is a test #çà", escapeLDAPSearchFilter("Hi This is a test #çà"));
         assertEquals("LDAP Christams Tree", "Hi \\28This\\29 = is \\2a a \\5c test # ç à ô", escapeLDAPSearchFilter("Hi (This) = is * a \\ test # ç à ô"));
+    }
+
+    @Test
+    public void testEscapeInvalidSymbols(){
+        String escapedBackUrl = StringUtils.escape("http://google.com/\"<script src=\"http://evil.com/dangerous.js\" type=\"text/javascript\" charset=\"utf-8\"></script>");
+        Assert.assertFalse(escapedBackUrl.contains(">"));
+        Assert.assertFalse(escapedBackUrl.contains("<"));
+        Assert.assertFalse(escapedBackUrl.contains("\""));
     }
 }

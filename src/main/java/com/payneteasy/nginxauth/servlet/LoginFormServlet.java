@@ -4,12 +4,7 @@ import com.payneteasy.nginxauth.service.*;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
 import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
 import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
-import com.payneteasy.nginxauth.util.CookiesManager;
-import com.payneteasy.nginxauth.util.HttpRequestUtil;
-import com.payneteasy.nginxauth.util.SettingsManager;
-import com.payneteasy.nginxauth.util.VelocityBuilder;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang3.StringEscapeUtils;
+import com.payneteasy.nginxauth.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,11 +28,11 @@ public class LoginFormServlet extends HttpServlet {
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         HttpRequestUtil.logDebug(aRequest);
 
-        String backUrl  = escape(aRequest.getParameter(BACK_URL_NAME));
-        String username = escape(aRequest.getParameter("j_username"));
-        String password = escape(aRequest.getParameter("j_password"));
-        String otp      = escape(aRequest.getParameter("j_code"));
-        String nonce    = escape(aRequest.getParameter("j_nonce"));
+        String backUrl  = StringUtils.escape(aRequest.getParameter(BACK_URL_NAME));
+        String username = StringUtils.escape(aRequest.getParameter("j_username"));
+        String password = StringUtils.escape(aRequest.getParameter("j_password"));
+        String otp      = StringUtils.escape(aRequest.getParameter("j_code"));
+        String nonce    = StringUtils.escape(aRequest.getParameter("j_nonce"));
 
         if(StringUtils.isEmpty(backUrl)) {
             showErrorForm(aResponse, "", "",  "Back url is empty");
@@ -124,17 +119,6 @@ public class LoginFormServlet extends HttpServlet {
 
     public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
 
-    }
-
-    String escape(String aText) {
-        if(aText!=null) {
-            if(aText.length()>50) {
-                aText = aText.substring(0, 50);
-            }
-            return StringEscapeUtils.escapeHtml4(aText);
-        } else {
-            return null;
-        }
     }
 
     private void showChangePasswordForm(HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage) throws IOException {

@@ -2,10 +2,7 @@ package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.service.INonceManager;
 import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
-import com.payneteasy.nginxauth.util.CookiesManager;
-import com.payneteasy.nginxauth.util.HttpRequestUtil;
-import com.payneteasy.nginxauth.util.SettingsManager;
-import com.payneteasy.nginxauth.util.VelocityBuilder;
+import com.payneteasy.nginxauth.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +29,7 @@ public class ShowLoginFormServlet extends HttpServlet {
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         HttpRequestUtil.logDebug(aRequest);
 
-        String backUrl = aRequest.getParameter(BACK_URL_NAME);
+        String backUrl = StringUtils.escape(aRequest.getParameter(BACK_URL_NAME));
 
         VelocityBuilder velocity = new VelocityBuilder();
         velocity.add("FORM_ACTION", "/auth/login");
