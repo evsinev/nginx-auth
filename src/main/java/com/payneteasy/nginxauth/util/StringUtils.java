@@ -1,5 +1,7 @@
 package com.payneteasy.nginxauth.util;
 
+import org.apache.commons.lang3.StringEscapeUtils;
+
 /**
  */
 public class StringUtils {
@@ -73,5 +75,16 @@ public class StringUtils {
             sb.insert(sb.length() - 1, '\\'); // add the trailing backslash if needed
         }
         return sb.toString();
+    }
+
+    public static String escape(String aText) {
+        if(aText!=null) {
+            if(aText.length()>50) {
+                aText = aText.substring(0, 50);
+            }
+            return StringEscapeUtils.escapeHtml4(aText);
+        } else {
+            return null;
+        }
     }
 }

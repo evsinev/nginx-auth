@@ -2,6 +2,7 @@ package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.service.ChangePasswordException;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
+import com.payneteasy.nginxauth.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,8 +16,8 @@ public class ChangePasswordServlet extends LoginFormServlet {
     @Override
     public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
 
-        String password_1 = escape(aRequest.getParameter("j_password_new_1"));
-        String password_2 = escape(aRequest.getParameter("j_password_new_2"));
+        String password_1 = StringUtils.escape(aRequest.getParameter("j_password_new_1"));
+        String password_2 = StringUtils.escape(aRequest.getParameter("j_password_new_2"));
 
         if(!password_1.equals(password_2)) {
             throw new ChangePasswordException("New passwords do not match");
