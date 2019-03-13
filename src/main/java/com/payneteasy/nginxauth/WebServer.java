@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth;
 
+import com.google.common.base.Strings;
 import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import org.eclipse.jetty.server.Connector;
@@ -18,6 +19,9 @@ public class WebServer {
     private static final Logger LOG = LoggerFactory.getLogger(WebServer.class);
 
     public static void main(String[] args) throws Exception {
+
+        setTrustedStorePassword();
+
         SettingsManager.logCurrentSettings();
 
         Server server = new Server();
@@ -42,5 +46,15 @@ public class WebServer {
             LOG.error("Can't start server", e);
             System.exit(1);
         }
+    }
+
+    private static void setTrustedStorePassword() {
+        String password = System.getenv("TRUST_STORE_PASSWORD");
+        if(Strings.isNullOrEmpty(password)) {
+            return;
+        }
+
+        System.setProperty("javax.net.ssl.trustStorePassword", password);
+        LOG.info("Setting javax.net.ssl.trustStorePassword from the TRUST_STORE_PASSWORD. Password length is {}", password.length());
     }
 }
