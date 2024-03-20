@@ -3,9 +3,7 @@ package com.payneteasy.nginxauth;
 import com.google.common.base.Strings;
 import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.util.SettingsManager;
-import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.nio.SelectChannelConnector;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,10 +22,8 @@ public class WebServer {
 
         SettingsManager.logCurrentSettings();
 
-        Server server = new Server();
-        Connector connector=new SelectChannelConnector();
-        connector.setPort(SettingsManager.getConnectorPort());
-        server.setConnectors(new Connector[]{connector});
+
+        Server server = new Server(SettingsManager.getConnectorPort());
 
         ServletContextHandler context  = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
 

@@ -77,14 +77,13 @@ public class StringUtils {
         return sb.toString();
     }
 
-    public static String escape(String aText) {
-        if(aText!=null) {
-            if(aText.length()>50) {
-                aText = aText.substring(0, 50);
-            }
-            return StringEscapeUtils.escapeHtml4(aText);
-        } else {
+    public static String escape(final String aText) {
+        if(aText == null) {
             return null;
         }
+
+        return StringEscapeUtils.escapeHtml4(
+                aText.length() > 1024 ? aText.substring(0, 50) : aText
+        );
     }
 }
