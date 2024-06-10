@@ -1,9 +1,6 @@
 package com.payneteasy.nginxauth.servlet;
 
-import com.payneteasy.nginxauth.service.IAuthService;
-import com.payneteasy.nginxauth.service.ITokenManager;
-import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
-import com.payneteasy.nginxauth.util.CookiesManager;
+import com.payneteasy.nginxauth.util.CheckCookiesAccess;
 import com.payneteasy.nginxauth.util.HttpRequestUtil;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import org.slf4j.Logger;
@@ -16,7 +13,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
-import java.util.Enumeration;
 
 /**
  *
@@ -24,11 +20,12 @@ import java.util.Enumeration;
 public class CheckAccessServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(CheckAccessServlet.class);
 
-    private static final String TOKEN_COOKIE_NAME = SettingsManager.getTokenCookieName();
     private static final String BACK_URL_NAME     = SettingsManager.getBackUrlName();
     private static final String AUTH_URL          = SettingsManager.getAuthUrl();
     private static final String INTERNAL_PREFIX   = SettingsManager.getInternalPrefix();
     private static final String X_ACCEL_REDIRECT  = SettingsManager.getXAccessRedirect();
+
+    private final CheckCookiesAccess checkCookiesAccess = new CheckCookiesAccess();
 
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
@@ -37,7 +34,7 @@ public class CheckAccessServlet extends HttpServlet {
         HttpRequestUtil.logDebug(aRequest);
 
         // check access token cookie
-        if(isValidToken(aRequest, aResponse)) {
+        if (checkCookiesAccess.isValidToken(aRequest, aResponse)) {
             // nginx internal redirect
             aResponse.setHeader(X_ACCEL_REDIRECT, createInternalUriRedirect(aRequest));
         } else {
@@ -72,16 +69,6 @@ public class CheckAccessServlet extends HttpServlet {
         return aRequestUrl;
     }
 
-    private boolean isValidToken(HttpServletRequest aRequest, HttpServletResponse aResponse) {
-        CookiesManager cookies = new CookiesManager(aRequest, aResponse);
-        String token = cookies.getCookieValue(TOKEN_COOKIE_NAME);
-        if(token==null) {
-            token = aRequest.getParameter(TOKEN_COOKIE_NAME);
-        }
-
-        return theTokenManager.validateToken(token);
-    }
-
     private static String createInternalUriRedirect(HttpServletRequest aRequest) {
         StringBuilder sb = new StringBuilder();
         sb.append(INTERNAL_PREFIX);
@@ -108,5 +95,4 @@ public class CheckAccessServlet extends HttpServlet {
         return reqUrl.toString();
     }
 
-    private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
 }

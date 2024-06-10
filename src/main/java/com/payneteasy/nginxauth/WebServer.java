@@ -33,6 +33,8 @@ public class WebServer {
         context.addServlet(ChangePasswordServlet.class  ,  getAuthUrl() + "/change-password" ).setAsyncSupported(true);
         context.addServlet(LogoutServlet.class          ,  getAuthUrl() + "/logout"          ).setAsyncSupported(true);
 
+        context.addServlet(NginxAuthRequestCheckServlet.class,  getAuthUrl() + "/nginx-auth-request-check" ).setAsyncSupported(true);
+
         server.setHandler(context);
 
         try {
