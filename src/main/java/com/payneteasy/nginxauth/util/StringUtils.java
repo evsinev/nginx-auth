@@ -67,6 +67,12 @@ public class StringUtils {
                 case ';':
                     sb.append("\\;");
                     break;
+                case '\'':
+                    sb.append("\\'");
+                    break;
+                case '`':
+                    sb.append("\\`");
+                    break;
                 default:
                     sb.append(curChar);
             }
