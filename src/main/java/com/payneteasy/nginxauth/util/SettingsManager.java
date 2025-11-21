@@ -4,8 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.StringTokenizer;
 
 import static com.payneteasy.nginxauth.util.SettingsManager.Setting.*;
+import static com.payneteasy.nginxauth.util.StringUtils.isEmpty;
 
 /**
  *
@@ -26,12 +31,22 @@ public class SettingsManager {
         , LDAP_USERS_DN              ( "ou=users,dc=example,dc=com" )
         , OTP_ENABLED                ( "true"                       )
         , SECURE_COOKIE              ( "true"                       )
+        , API_CHECK_ENABLED          ( "false"                      )
+        , API_CHECK_TOKENS           ( "", true               )
         ;
 
-        private Setting(String aDefaultValue) {
+        Setting(String aDefaultValue) {
             defaultValue = aDefaultValue;
+            secure = false;
         }
-        private final String defaultValue;
+
+        Setting(String defaultValue, boolean secure) {
+            this.defaultValue = defaultValue;
+            this.secure       = secure;
+        }
+
+        private final String  defaultValue;
+        private final boolean secure;
     }
 
     public static void logCurrentSettings() {
@@ -44,7 +59,11 @@ public class SettingsManager {
 
         LOG.info("Settings:");
         for (Setting setting : Setting.values()) {
-            LOG.info(String.format("    %"+max+"s : %s", setting.name(), get(setting)));
+            if (setting.secure) {
+                LOG.info("{}", String.format("    %"+max+"s : %s", setting.name(), "length=" + get(setting).length()));
+            } else {
+                LOG.info("{}", String.format("    %"+max+"s : %s", setting.name(), get(setting)));
+            }
         }
 
         String trustStoreFilename = System.getProperty("javax.net.ssl.trustStore");
@@ -105,6 +124,24 @@ public class SettingsManager {
 
     public static boolean getSecureCookie() {
         return getBoolean(SECURE_COOKIE);
+    }
+
+    public static boolean isApiCheckEnabled() {
+        return getBoolean(API_CHECK_ENABLED);
+    }
+
+    public static Set<String> getAccessTokens() {
+        String tokens = get(API_CHECK_TOKENS);
+        if (isEmpty(tokens)) {
+            return Collections.emptySet();
+        }
+
+        StringTokenizer st = new StringTokenizer(tokens, ", ");
+        Set<String> result = new HashSet<>();
+        while (st.hasMoreTokens()) {
+            result.add("Bearer " + st.nextToken());
+        }
+        return result;
     }
 
 }
