@@ -15,6 +15,10 @@ public class StringUtils {
         return aText==null || aText.length()==0 || aText.trim().length()==0;
     }
 
+    public static boolean hasText(String aText) {
+        return !isEmpty(aText);
+    }
+
 
     public static String escapeLDAPSearchFilter(String filter) {
         StringBuilder sb = new StringBuilder();

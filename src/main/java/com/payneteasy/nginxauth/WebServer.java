@@ -60,6 +60,8 @@ public class WebServer {
     }
 
     private static void addApiCheckServlets(ServletContextHandler context) {
+        LOG.info("Adding api check servlets: /nginx-auth/api/check/check-password and /nginx-auth/api/check/check-otp");
+
         OneTimePasswordServiceImpl oneTimePasswordService = new OneTimePasswordServiceImpl();
         Set<String>                accessTokens           = SettingsManager.getAccessTokens();
         IAuthService               authService            = new AuthServiceImpl();

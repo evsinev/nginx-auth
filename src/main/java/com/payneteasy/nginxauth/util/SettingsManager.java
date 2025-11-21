@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import static com.payneteasy.nginxauth.util.SettingsManager.Setting.*;
+import static com.payneteasy.nginxauth.util.StringUtils.hasText;
 import static com.payneteasy.nginxauth.util.StringUtils.isEmpty;
 
 /**
@@ -75,7 +76,21 @@ public class SettingsManager {
     }
 
     private static String get(Setting aSetting) {
-        return  System.getProperty(aSetting.name(), aSetting.defaultValue);
+        {
+            String propertyValue = System.getProperty(aSetting.name());
+            if (hasText(propertyValue)) {
+                return propertyValue;
+            }
+        }
+
+        {
+            String envValue = System.getenv(aSetting.name());
+            if (hasText(envValue)) {
+                return envValue;
+            }
+        }
+
+        return aSetting.defaultValue;
     }
 
     private static boolean getBoolean(Setting aSetting) {
