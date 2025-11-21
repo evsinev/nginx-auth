@@ -69,13 +69,13 @@ public class WebServer {
                   authService
                 , gson
                 , accessTokens
-        )), "/api/check/check-password/*");
+        )), "/nginx-auth/api/check/check-password/*");
 
         context.addServlet(new ServletHolder(new ApiCheckUsernameOtpServlet(
                 oneTimePasswordService
                 , gson
                 , accessTokens
-        )), "/api/check/check-otp/*");
+        )), "/nginx-auth/api/check/check-otp/*");
     }
 
     private static void setTrustedStorePassword() {
