@@ -2,9 +2,14 @@ package com.payneteasy.nginxauth.util;
 
 import org.apache.commons.lang3.StringEscapeUtils;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  */
 public class StringUtils {
+
+    private static final Set<Character> ESCAPES = createEscapes();
 
     public static boolean isEmpty(String aText) {
         return aText==null || aText.length()==0 || aText.trim().length()==0;
@@ -38,48 +43,31 @@ public class StringUtils {
         return sb.toString();
     }
 
+    private static Set<Character> createEscapes() {
+        Set<Character> escapes = new HashSet<>();
+        String chars = "',+\"<>;'`|\\(){}[]+&#";
+        for (char c : chars.toCharArray()) {
+            escapes.add(c);
+        }
+        return escapes;
+    }
+
+
     public static String escapeDN(String name) {
         StringBuilder sb = new StringBuilder();
-        if ((name.length() > 0) && ((name.charAt(0) == ' ') || (name.charAt(0) == '#'))) {
+        if ((name.length() > 0) && ((name.charAt(0) == ' '))) {
             sb.append('\\'); // add the leading backslash if needed
         }
+
         for (int i = 0; i < name.length(); i++) {
             char curChar = name.charAt(i);
-            switch (curChar) {
-                case '\\':
-                    sb.append("\\\\");
-                    break;
-                case ',':
-                    sb.append("\\,");
-                    break;
-                case '+':
-                    sb.append("\\+");
-                    break;
-                case '"':
-                    sb.append("\\\"");
-                    break;
-                case '<':
-                    sb.append("\\<");
-                    break;
-                case '>':
-                    sb.append("\\>");
-                    break;
-                case ';':
-                    sb.append("\\;");
-                    break;
-                case '\'':
-                    sb.append("\\'");
-                    break;
-                case '`':
-                    sb.append("\\`");
-                    break;
-                case '|':
-                    sb.append("\\|");
-                    break;
-                default:
-                    sb.append(curChar);
+            if (ESCAPES.contains(curChar)) {
+                sb.append('\\');
             }
+            sb.append(curChar);
+
         }
+
         if ((name.length() > 1) && (name.charAt(name.length() - 1) == ' ')) {
             sb.insert(sb.length() - 1, '\\'); // add the trailing backslash if needed
         }
