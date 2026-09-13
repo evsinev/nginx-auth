@@ -23,18 +23,21 @@ This service provides a secure way to protect your nginx-hosted web applications
     location /auth {
         proxy_set_header Host              $host:$server_port;
         proxy_set_header x-Forwarded-proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
         proxy_pass http://127.0.0.1:9091;
     }
     
     location /srvlog {
         proxy_set_header Host              $host:$server_port;
         proxy_set_header x-Forwarded-proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
         proxy_pass http://127.0.0.1:9091;
     }
     
     location /internal-srvlog {
         proxy_set_header Host              $host:$server_port;
         proxy_set_header x-Forwarded-proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
         
         internal;
         proxy_set_header nginx_location "/internal-srvlog";
@@ -48,7 +51,17 @@ This service provides a secure way to protect your nginx-hosted web applications
 `back` must be a relative path on the same host. An external auth domain is not supported.
 
 ```nginx configuration
+    location /auth {
+        proxy_set_header Host              $host:$server_port;
+        proxy_set_header x-Forwarded-proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_pass http://127.0.0.1:9091;
+    }
+
     location /srvlog {
+        proxy_set_header Host              $host:$server_port;
+        proxy_set_header x-Forwarded-proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
         proxy_pass http://127.0.0.1:9091;
 
         auth_request            http://127.0.0.1:9091/auth/nginx-auth-request-check;
@@ -62,7 +75,7 @@ This service provides a secure way to protect your nginx-hosted web applications
     }
 ```
 
-Use `limit_req` in nginx in addition to the in-process login lockout.
+nginx **must** overwrite `X-Real-IP`. If that header is missing, IP lockout is skipped and only the per-username limit applies (otherwise every client behind nginx shares `127.0.0.1`). Use `limit_req` in nginx in addition to the in-process lockout.
 
 ## Environment variables
 
@@ -83,4 +96,4 @@ Use `limit_req` in nginx in addition to the in-process login lockout.
 | API_CHECK_TOKENS           |                            | Access tokens delimited by comma |
 | LOGIN_MAX_FAILURES         | 5                          | Failed logins before lockout     |
 | LOGIN_LOCKOUT_SECONDS      | 300                        | Lockout window in seconds        |
-| CLIENT_IP_HEADER           | X-Real-IP                  | Client IP header (nginx must overwrite it) |
+| CLIENT_IP_HEADER           | X-Real-IP                  | Client IP for lockout; skipped if absent. nginx must overwrite it |

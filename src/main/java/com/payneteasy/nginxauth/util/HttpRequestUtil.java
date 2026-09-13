@@ -42,16 +42,22 @@ public class HttpRequestUtil {
         response.setContentType("text/html; charset=UTF-8");
     }
 
+    /**
+     * Client IP from {@code CLIENT_IP_HEADER} (default {@code X-Real-IP}).
+     * Returns {@code null} when the header is absent so IP lockout is not applied
+     * to nginx's own address ({@code 127.0.0.1}).
+     */
     public static String clientIp(HttpServletRequest request) {
         String headerName = SettingsManager.getClientIpHeader();
-        if (hasText(headerName)) {
-            String headerValue = request.getHeader(headerName);
-            if (hasText(headerValue)) {
-                int comma = headerValue.indexOf(',');
-                return comma < 0 ? headerValue.trim() : headerValue.substring(0, comma).trim();
-            }
+        if (!hasText(headerName)) {
+            return null;
         }
-        return request.getRemoteAddr();
+        String headerValue = request.getHeader(headerName);
+        if (!hasText(headerValue)) {
+            return null;
+        }
+        int comma = headerValue.indexOf(',');
+        return comma < 0 ? headerValue.trim() : headerValue.substring(0, comma).trim();
     }
 
     static String redactHeader(String name, String value) {

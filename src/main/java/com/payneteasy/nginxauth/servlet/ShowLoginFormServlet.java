@@ -36,13 +36,13 @@ public class ShowLoginFormServlet extends HttpServlet {
             velocity.add("BACK_URL_VALUE", "");
             velocity.add("REASON", "Bad back url");
         }
-        velocity.add("NONCE"       , theNonceManager.addNonce());
         velocity.add("OTP_ENABLED" , OTP_ENABLED               );
 
         CookiesManager cookiesManager = new CookiesManager(aRequest, aResponse);
         if(!cookiesManager.hasCookie(getTokenCookieName()) && cookiesManager.hasCookie(getTokenCookieAssignedName())) {
             velocity.add("REASON", "Please check secure cookie. Do not use http when secure cookies is enabled.");
         }
+        LoginFormServlet.putNonce(velocity, theNonceManager);
 
         velocity.processTemplate(ShowLoginFormServlet.class, "/pages/login-form.vm", aResponse.getWriter());
 

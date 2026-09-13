@@ -53,9 +53,10 @@ public class ApiCheckUsernamePasswordServlet extends HttpServlet {
 
         String username = checkRequest.getUsername();
         String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
         RateLimiter rateLimiter = RateLimiter.getInstance();
         if (rateLimiter.isBlocked(RateLimiter.userKey(username))
-                || rateLimiter.isBlocked(RateLimiter.ipKey(ip))) {
+                || rateLimiter.isBlocked(ipKey)) {
             api.writeError(401, "Authentication failed");
             return;
         }
@@ -66,7 +67,7 @@ public class ApiCheckUsernamePasswordServlet extends HttpServlet {
             api.writeSuccessResponse(username);
         } catch (AuthenticationException e) {
             rateLimiter.recordFailure(RateLimiter.userKey(username));
-            rateLimiter.recordFailure(RateLimiter.ipKey(ip));
+            rateLimiter.recordFailure(ipKey);
             api.writeError(401, "Authentication failed", e);
         } catch (UserMustChangePasswordException e) {
             api.writeError(403, "User must change password", e);

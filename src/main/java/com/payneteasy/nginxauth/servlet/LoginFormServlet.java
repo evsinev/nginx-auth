@@ -85,8 +85,9 @@ public class LoginFormServlet extends HttpServlet {
         }
 
         String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
         if (theRateLimiter.isBlocked(RateLimiter.userKey(username))
-                || theRateLimiter.isBlocked(RateLimiter.ipKey(ip))) {
+                || theRateLimiter.isBlocked(ipKey)) {
             LOG.warn("Login rate-limited [user:{}]", username);
             showErrorForm(aResponse, backUrl, username, "Authentication failed");
             return;
@@ -137,13 +138,23 @@ public class LoginFormServlet extends HttpServlet {
         } catch (Exception e) {
             LOG.error("User "+username+" login failed", e);
             theRateLimiter.recordFailure(RateLimiter.userKey(username));
-            theRateLimiter.recordFailure(RateLimiter.ipKey(ip));
+            theRateLimiter.recordFailure(ipKey);
             showErrorForm(aResponse, backUrl, username, "Authentication failed");
         }
     }
 
     static boolean tooLong(String value, int max) {
         return value != null && value.length() > max;
+    }
+
+    static void putNonce(VelocityBuilder velocity, INonceManager nonceManager) {
+        String nonce = nonceManager.addNonce();
+        if (nonce == null) {
+            velocity.add("NONCE", "");
+            velocity.add("REASON", "Service busy");
+        } else {
+            velocity.add("NONCE", nonce);
+        }
     }
 
     public boolean canCheckAccess() {
@@ -172,8 +183,8 @@ public class LoginFormServlet extends HttpServlet {
         velocity.add("FORM_ACTION"    , aAction                     );
         velocity.add("REASON"         , aErrorMessage               );
         velocity.add("USERNAME"       , aUsername                   );
-        velocity.add("NONCE"          , theNonceManager.addNonce()  );
         velocity.add("OTP_ENABLED"    , OTP_ENABLED                 );
+        putNonce(velocity, theNonceManager);
 
         velocity.processTemplate(LoginFormServlet.class, aFormTemplate, aResponse.getWriter());
     }

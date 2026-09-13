@@ -37,20 +37,24 @@ public class RateLimiter {
     }
 
     public boolean isBlocked(String key) {
-        Window window = windows.get(key);
-        if (window == null) {
+        if (key == null) {
             return false;
         }
         long now = clock.getAsLong();
-        if (now - window.windowStart >= lockoutMillis) {
-            windows.remove(key, window);
+        purgeExpired(now);
+        Window window = windows.get(key);
+        if (window == null) {
             return false;
         }
         return window.failures >= maxFailures;
     }
 
     public void recordFailure(String key) {
+        if (key == null) {
+            return;
+        }
         long now = clock.getAsLong();
+        purgeExpired(now);
         windows.compute(key, (k, window) -> {
             if (window == null || now - window.windowStart >= lockoutMillis) {
                 return new Window(1, now);
@@ -60,7 +64,18 @@ public class RateLimiter {
     }
 
     public void recordSuccess(String key) {
+        if (key == null) {
+            return;
+        }
         windows.remove(key);
+    }
+
+    int size() {
+        return windows.size();
+    }
+
+    private void purgeExpired(long now) {
+        windows.entrySet().removeIf(entry -> now - entry.getValue().windowStart >= lockoutMillis);
     }
 
     private static final class Window {

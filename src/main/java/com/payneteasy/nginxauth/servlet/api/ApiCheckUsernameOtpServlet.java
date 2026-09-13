@@ -59,16 +59,17 @@ public class ApiCheckUsernameOtpServlet extends HttpServlet {
 
         String username = checkRequest.getUsername();
         String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
         RateLimiter rateLimiter = RateLimiter.getInstance();
         if (rateLimiter.isBlocked(RateLimiter.userKey(username))
-                || rateLimiter.isBlocked(RateLimiter.ipKey(ip))) {
+                || rateLimiter.isBlocked(ipKey)) {
             api.writeError(401, "Bad OTP code");
             return;
         }
 
         if (!oneTimePasswordService.checkCode(username, otp)) {
             rateLimiter.recordFailure(RateLimiter.userKey(username));
-            rateLimiter.recordFailure(RateLimiter.ipKey(ip));
+            rateLimiter.recordFailure(ipKey);
             api.writeError(401, "Bad OTP code");
             return;
         }
