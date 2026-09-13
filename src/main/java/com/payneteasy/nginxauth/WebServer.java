@@ -9,9 +9,9 @@ import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernameOtpServlet;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernamePasswordServlet;
 import com.payneteasy.nginxauth.util.SettingsManager;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +34,9 @@ public class WebServer {
 
         Server server = new Server(SettingsManager.getConnectorPort());
 
-        ServletContextHandler context  = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
-        context.setAttribute("org.eclipse.jetty.cookie.sameSiteDefault", "Lax");
+        ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
+        context.setContextPath("/");
+        server.setHandler(context);
 
         context.addServlet(CheckAccessServlet.class     ,  "/*"                              ).setAsyncSupported(true);
         context.addServlet(ShowLoginFormServlet.class   ,  getAuthUrl() + "/*"               ).setAsyncSupported(true);
@@ -48,8 +49,6 @@ public class WebServer {
         if (SettingsManager.isApiCheckEnabled()) {
             addApiCheckServlets(context);
         }
-
-        server.setHandler(context);
 
         try {
             server.start();

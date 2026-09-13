@@ -1,8 +1,8 @@
 package com.payneteasy.nginxauth.util;
 
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -41,10 +41,7 @@ public class CookiesManager {
 
     public void add(String aKey, String aValue) {
         Cookie cookie = new Cookie(aKey, aValue);
-        cookie.setHttpOnly(true);
-        if (SECURE_COOKIE) {
-            cookie.setSecure(true);
-        }
+        applyCookieFlags(cookie, SECURE_COOKIE);
         cookie.setPath("/");
         cookie.setMaxAge(-1);
         theResponse.addCookie(cookie);
@@ -52,7 +49,7 @@ public class CookiesManager {
 
     public void addAssignedMarker(String aKey, String aValue) {
         Cookie cookie = new Cookie(aKey, aValue);
-        cookie.setHttpOnly(true);
+        applyCookieFlags(cookie, false);
         cookie.setPath("/");
         cookie.setMaxAge(-1);
         theResponse.addCookie(cookie);
@@ -69,12 +66,17 @@ public class CookiesManager {
 
     private void expire(String name, boolean secure) {
         Cookie cookie = new Cookie(name, "");
+        applyCookieFlags(cookie, secure);
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
+        theResponse.addCookie(cookie);
+    }
+
+    private static void applyCookieFlags(Cookie cookie, boolean secure) {
         cookie.setHttpOnly(true);
         if (secure) {
             cookie.setSecure(true);
         }
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        theResponse.addCookie(cookie);
+        cookie.setAttribute("SameSite", "Lax");
     }
 }

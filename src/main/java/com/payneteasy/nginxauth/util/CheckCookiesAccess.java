@@ -3,8 +3,8 @@ package com.payneteasy.nginxauth.util;
 import com.payneteasy.nginxauth.service.ITokenManager;
 import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 public class CheckCookiesAccess {
 

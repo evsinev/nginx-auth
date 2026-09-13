@@ -26,7 +26,7 @@
     <properties>
         <slf4j.version>2.0.17</slf4j.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jetty.version>9.4.54.v20240208</jetty.version>
+        <jetty.version>12.1.13</jetty.version>
         <lombok.version>1.18.42</lombok.version>
     </properties>
 
@@ -58,19 +58,13 @@
 
         <dependency>
           <groupId>org.eclipse.jetty</groupId>
-          <artifactId>jetty-servlet</artifactId>
-          <version>${jetty.version}</version>
-        </dependency>
-
-        <dependency>
-          <groupId>org.eclipse.jetty</groupId>
-          <artifactId>jetty-util</artifactId>
-          <version>${jetty.version}</version>
-        </dependency>
-
-        <dependency>
-          <groupId>org.eclipse.jetty</groupId>
           <artifactId>jetty-server</artifactId>
+          <version>${jetty.version}</version>
+        </dependency>
+
+        <dependency>
+          <groupId>org.eclipse.jetty.ee10</groupId>
+          <artifactId>jetty-ee10-servlet</artifactId>
           <version>${jetty.version}</version>
         </dependency>
 
