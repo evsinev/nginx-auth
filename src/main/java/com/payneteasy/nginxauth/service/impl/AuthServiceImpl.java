@@ -1,8 +1,5 @@
 package com.payneteasy.nginxauth.service.impl;
 
-import com.payneteasy.ldap.users.impl.DirectoryServiceImpl;
-import com.payneteasy.ldap.users.model.LdapQuery;
-import com.payneteasy.ldap.users.model.LdapQueryHolder;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
@@ -15,7 +12,6 @@ import javax.naming.directory.BasicAttribute;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.ModificationItem;
 import javax.naming.ldap.InitialLdapContext;
-import java.util.Map;
 import java.util.Properties;
 
 import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
@@ -26,6 +22,11 @@ import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
 public class AuthServiceImpl implements IAuthService {
 
     private static final Logger LOG = LoggerFactory.getLogger(AuthServiceImpl.class);
+
+    private static final String[] USER_INFO_ATTRS = {
+            "cn", "gecos", "uid", "uidNumber", "authTimestamp", "pwdFailedTime",
+            "pwdChangedTime", "pwdReset", "pwdFailureTime", "pwdAccountLockedTime", "host"
+    };
 
     @Override
     public void authenticate(String aUsername, String aPassword, boolean aCanCheckAccess) throws AuthenticationException, UserMustChangePasswordException {
@@ -43,7 +44,7 @@ public class AuthServiceImpl implements IAuthService {
 
         } catch (AuthenticationException e) {
             LOG.error("Can't connect to ldap: "+e.getLocalizedMessage());
-            throw new AuthenticationException(e.getLocalizedMessage());
+            throw new AuthenticationException("Authentication failed");
 
         } catch (NoPermissionException e) {
             // http://blogs.nologin.es/rickyepoderi/index.php/archives/57-LDAP-password-policies-and-JavaEE.html
@@ -52,12 +53,12 @@ public class AuthServiceImpl implements IAuthService {
 
         } catch (NamingException e) {
             LOG.error("Can't connect to ldap: " + e.getExplanation(), e);
-            throw new AuthenticationException(e.getExplanation());
+            throw new AuthenticationException("Authentication failed");
         }
     }
 
     private InitialLdapContext createInitialLdapContext(String aUsername, String aPassword) throws NamingException {
-        String user = getUserCommonName(aUsername);
+        String user = buildUserDn(aUsername);
         LOG.debug("Connecting to ldap with {}...", user);
 
         Properties env = new Properties();
@@ -69,7 +70,7 @@ public class AuthServiceImpl implements IAuthService {
         return new InitialLdapContext(env, null);
     }
 
-    private String getUserCommonName(String aUsername) {
+    private String buildUserDn(String aUsername) {
         return String.format("cn=%s,%s"
                     , escapeDN(aUsername)
                     , SettingsManager.getLdapUsersDn()
@@ -77,11 +78,8 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     private void checkAccess(String aUsername, InitialLdapContext context, boolean aCanCheckAccess) throws NamingException {
-        DirectoryServiceImpl directoryService = new DirectoryServiceImpl(context);
-        LdapQueryHolder queryHolder = new LdapQueryHolder(aUsername, SettingsManager.getLdapUsersDn());
-        LdapQuery ldapQuery = queryHolder.find("user-info");
-        if(aCanCheckAccess) {
-            Map<String, Object> result = directoryService.get("cn="+aUsername+","+SettingsManager.getLdapUsersDn(), ldapQuery.attributes);
+        if (aCanCheckAccess) {
+            context.getAttributes(buildUserDn(aUsername), USER_INFO_ATTRS);
         }
     }
 
@@ -108,7 +106,7 @@ public class AuthServiceImpl implements IAuthService {
                         new ModificationItem(DirContext.ADD_ATTRIBUTE   , new BasicAttribute("userPassword", aNewPassword))
                 };
 
-                context.modifyAttributes(getUserCommonName(aUsername), modificationItems);
+                context.modifyAttributes(buildUserDn(aUsername), modificationItems);
             } finally {
                 context.close();
             }
@@ -118,11 +116,11 @@ public class AuthServiceImpl implements IAuthService {
 
         } catch (AuthenticationException e) {
             LOG.error("Can't connect to ldap: "+e.getLocalizedMessage());
-            throw new AuthenticationException(e.getLocalizedMessage());
+            throw new AuthenticationException("Password change failed");
 
         } catch (NamingException e) {
             LOG.error("Can't connect to ldap: " + e.getExplanation(), e);
-            throw new AuthenticationException(e.getExplanation());
+            throw new AuthenticationException("Password change failed");
         }
     }
 

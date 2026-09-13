@@ -2,11 +2,13 @@ package com.payneteasy.nginxauth.servlet.api;
 
 import com.google.gson.Gson;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
+import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.servlet.api.messages.CheckUsernameOtpRequest;
+import com.payneteasy.nginxauth.util.HttpRequestUtil;
 
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.Set;
@@ -55,11 +57,24 @@ public class ApiCheckUsernameOtpServlet extends HttpServlet {
             return;
         }
 
-        if (!oneTimePasswordService.checkCode(checkRequest.getUsername(), otp)) {
+        String username = checkRequest.getUsername();
+        String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
+        RateLimiter rateLimiter = RateLimiter.getInstance();
+        if (rateLimiter.isBlocked(RateLimiter.userKey(username))
+                || rateLimiter.isBlocked(ipKey)) {
             api.writeError(401, "Bad OTP code");
             return;
         }
 
-        api.writeSuccessResponse(checkRequest.getUsername());
+        if (!oneTimePasswordService.checkCode(username, otp)) {
+            rateLimiter.recordFailure(RateLimiter.userKey(username));
+            rateLimiter.recordFailure(ipKey);
+            api.writeError(401, "Bad OTP code");
+            return;
+        }
+
+        rateLimiter.recordSuccess(RateLimiter.userKey(username));
+        api.writeSuccessResponse(username);
     }
 }

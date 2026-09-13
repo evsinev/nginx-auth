@@ -7,23 +7,26 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Writer;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 public class VelocityBuilder {
 
     public VelocityBuilder() {
         Properties p = new Properties();
-        p.setProperty("resource.loader", "class");
-        p.setProperty("class.resource.loader.class", "org.apache.velocity.runtime.resource.loader.ClasspathResourceLoader");
-        p.setProperty("runtime.log.logsystem.class", "org.apache.velocity.runtime.log.Log4JLogChute");
-        p.setProperty("runtime.log.logsystem.log4j.logger", "velocity");
+        p.setProperty("resource.loaders", "class");
+        p.setProperty("resource.loader.class.class", "org.apache.velocity.runtime.resource.loader.ClasspathResourceLoader");
 
         theEngine = new VelocityEngine(p);
 
     }
 
     public VelocityBuilder add(String aKey, Object aValue) {
-        theContext.put(aKey, aValue);
+        if (aValue instanceof String) {
+            theContext.put(aKey, StringUtils.escapeHtml((String) aValue));
+        } else {
+            theContext.put(aKey, aValue);
+        }
         return this;
     }
 
@@ -43,7 +46,7 @@ public class VelocityBuilder {
     public void processTemplate(URL aUrl, Writer output) throws IOException {
         if(aUrl==null) throw new IllegalStateException("URL for resource is null");
 
-        InputStreamReader in = new InputStreamReader(aUrl.openStream());
+        InputStreamReader in = new InputStreamReader(aUrl.openStream(), StandardCharsets.UTF_8);
         try {
             theEngine.evaluate(theContext, output, "velocity", in);
         } finally {

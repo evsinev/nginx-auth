@@ -1,17 +1,16 @@
 package com.payneteasy.nginxauth.util;
 
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- *
- */
 public class CookiesManager {
 
     private static final boolean SECURE_COOKIE = SettingsManager.getSecureCookie();
+    private static final String TOKEN_COOKIE_NAME = SettingsManager.getTokenCookieName();
+    private static final String TOKEN_COOKIE_ASSIGNED_NAME = SettingsManager.getTokenCookieAssignedName();
 
     private Map<String, Cookie> theMap;
     private final HttpServletRequest theRequest;
@@ -42,22 +41,17 @@ public class CookiesManager {
 
     public void add(String aKey, String aValue) {
         Cookie cookie = new Cookie(aKey, aValue);
-
-        if(SECURE_COOKIE) {
-            cookie.setHttpOnly(true);
-            cookie.setSecure(true);
-        }
-
+        applyCookieFlags(cookie, SECURE_COOKIE);
         cookie.setPath("/");
-        cookie.setMaxAge(-1); // will be deleted when the Web browser exits
-
+        cookie.setMaxAge(-1);
         theResponse.addCookie(cookie);
     }
 
-    public void addUnsecure(String aKey, String aValue) {
+    public void addAssignedMarker(String aKey, String aValue) {
         Cookie cookie = new Cookie(aKey, aValue);
+        applyCookieFlags(cookie, false);
         cookie.setPath("/");
-        cookie.setMaxAge(-1); // will be deleted when the Web browser exits
+        cookie.setMaxAge(-1);
         theResponse.addCookie(cookie);
     }
 
@@ -66,14 +60,23 @@ public class CookiesManager {
     }
 
     public void clear() {
-        Cookie[] cookies = theRequest.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                cookie.setValue("");
-                cookie.setPath("/");
-                cookie.setMaxAge(0);
-                theResponse.addCookie(cookie);
-            }
+        expire(TOKEN_COOKIE_NAME, SECURE_COOKIE);
+        expire(TOKEN_COOKIE_ASSIGNED_NAME, false);
+    }
+
+    private void expire(String name, boolean secure) {
+        Cookie cookie = new Cookie(name, "");
+        applyCookieFlags(cookie, secure);
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
+        theResponse.addCookie(cookie);
+    }
+
+    private static void applyCookieFlags(Cookie cookie, boolean secure) {
+        cookie.setHttpOnly(true);
+        if (secure) {
+            cookie.setSecure(true);
         }
+        cookie.setAttribute("SameSite", "Lax");
     }
 }

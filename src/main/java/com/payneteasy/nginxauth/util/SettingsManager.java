@@ -34,6 +34,9 @@ public class SettingsManager {
         , SECURE_COOKIE              ( "true"                       )
         , API_CHECK_ENABLED          ( "false"                      )
         , API_CHECK_TOKENS           ( "", true               )
+        , LOGIN_MAX_FAILURES         ( "5"                          )
+        , LOGIN_LOCKOUT_SECONDS      ( "300"                        )
+        , CLIENT_IP_HEADER           ( "X-Real-IP"                  )
         ;
 
         Setting(String aDefaultValue) {
@@ -143,6 +146,18 @@ public class SettingsManager {
 
     public static boolean isApiCheckEnabled() {
         return getBoolean(API_CHECK_ENABLED);
+    }
+
+    public static int getLoginMaxFailures() {
+        return Integer.parseInt(get(LOGIN_MAX_FAILURES));
+    }
+
+    public static int getLoginLockoutSeconds() {
+        return Integer.parseInt(get(LOGIN_LOCKOUT_SECONDS));
+    }
+
+    public static String getClientIpHeader() {
+        return get(CLIENT_IP_HEADER);
     }
 
     public static Set<String> getAccessTokens() {

@@ -21,4 +21,10 @@ jobs:
         cache: maven
     - name: Build with Maven
       run: mvn -B package --file pom.xml
+    - name: Scan dependencies with OSV
+      uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
+      with:
+        scan-args: |-
+          --recursive
+          ./
 

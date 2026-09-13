@@ -3,72 +3,102 @@ package com.payneteasy.nginxauth.servlet;
 import com.payneteasy.nginxauth.service.*;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
 import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
+import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
 import com.payneteasy.nginxauth.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
+import java.util.Optional;
 
-/**
- *
- */
 public class LoginFormServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(LoginFormServlet.class);
 
     private static final String  BACK_URL_NAME = SettingsManager.getBackUrlName();
     private static final boolean OTP_ENABLED   = SettingsManager.isOtpEnabled();
 
+    static final int MAX_USERNAME = 256;
+    static final int MAX_PASSWORD = 1024;
+    static final int MAX_OTP      = 10;
+    static final int MAX_BACK     = 2048;
+    static final int MAX_NONCE    = 64;
+
     @Override
-    protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
+    protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         HttpRequestUtil.logDebug(aRequest);
 
-        String backUrl  = StringUtils.escape(aRequest.getParameter(BACK_URL_NAME));
-        String username = StringUtils.escape(aRequest.getParameter("j_username"));
-        String password = StringUtils.escape(aRequest.getParameter("j_password"));
-        String otp      = StringUtils.escape(aRequest.getParameter("j_code"));
-        String nonce    = StringUtils.escape(aRequest.getParameter("j_nonce"));
+        String backRaw  = aRequest.getParameter(BACK_URL_NAME);
+        String username = aRequest.getParameter("j_username");
+        String password = aRequest.getParameter("j_password");
+        String otp      = aRequest.getParameter("j_code");
+        String nonce    = aRequest.getParameter("j_nonce");
 
-        if(StringUtils.isEmpty(backUrl)) {
-            showErrorForm(aResponse, "", "",  "Back url is empty");
-            return ;
+        if (StringUtils.isEmpty(backRaw)) {
+            showErrorForm(aResponse, "", "", "Back url is empty");
+            return;
         }
-
-        try {
-            new URL(backUrl);
-        } catch (Exception e) {
-            showErrorForm(aResponse, "", "",  "Bad back url");
-            return ;
+        if (tooLong(backRaw, MAX_BACK)) {
+            showErrorForm(aResponse, "", "", "Bad back url");
+            return;
         }
+        Optional<String> backOpt = BackUrl.normalize(backRaw);
+        if (!backOpt.isPresent()) {
+            showErrorForm(aResponse, "", "", "Bad back url");
+            return;
+        }
+        String backUrl = backOpt.get();
 
-        if(StringUtils.isEmpty(nonce)) {
-            showErrorForm(aResponse, backUrl, "",  "Nonce is empty");
+        if (tooLong(nonce, MAX_NONCE)) {
+            showErrorForm(aResponse, backUrl, "", "Invalid nonce");
+            return;
+        }
+        if (StringUtils.isEmpty(nonce)) {
+            showErrorForm(aResponse, backUrl, "", "Nonce is empty");
+            return;
+        }
+        if (!theNonceManager.checkNonce(nonce)) {
+            showErrorForm(aResponse, backUrl, "", "Invalid nonce");
             return;
         }
 
-        if(!theNonceManager.checkNonce(nonce)) {
-            showErrorForm(aResponse, backUrl, "",  "Invalid nonce");
+        if (tooLong(username, MAX_USERNAME)) {
+            showErrorForm(aResponse, backUrl, "", "Username is too long");
             return;
         }
-
-        if(StringUtils.isEmpty(username)) {
+        if (StringUtils.isEmpty(username)) {
             showErrorForm(aResponse, backUrl, "", "Username is empty");
             return;
         }
 
-        if(StringUtils.isEmpty(password)) {
+        if (tooLong(password, MAX_PASSWORD)) {
+            showErrorForm(aResponse, backUrl, username, "Password is too long");
+            return;
+        }
+        if (StringUtils.isEmpty(password)) {
             showErrorForm(aResponse, backUrl, username, "Password is empty");
             return;
         }
 
+        String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
+        if (theRateLimiter.isBlocked(RateLimiter.userKey(username))
+                || theRateLimiter.isBlocked(ipKey)) {
+            LOG.warn("Login rate-limited [user:{}]", username);
+            showErrorForm(aResponse, backUrl, username, "Authentication failed");
+            return;
+        }
+
         try {
-            // username, password, OTP
             if (OTP_ENABLED) {
+                if (tooLong(otp, MAX_OTP)) {
+                    showErrorForm(aResponse, backUrl, username, "Verification code is invalid");
+                    return;
+                }
                 if (StringUtils.isEmpty(otp)) {
                     showErrorForm(aResponse, backUrl, username, "Verification code is empty");
                     return;
@@ -78,13 +108,11 @@ public class LoginFormServlet extends HttpServlet {
                 try {
                     verificationCode = Long.parseLong(otp);
                 } catch (Exception e) {
-                    LOG.warn("Verification code is not number [user:{}, code:{}]", username, otp);
+                    LOG.warn("Verification code is not number [user:{}]", username);
                 }
 
                 theAuthService.authenticate(username, password, verificationCode, canCheckAccess());
-
             } else {
-                // username, password
                 theAuthService.authenticate(username, password, canCheckAccess());
             }
 
@@ -92,9 +120,11 @@ public class LoginFormServlet extends HttpServlet {
 
             doCustomAction(username, password, aRequest);
 
+            theRateLimiter.recordSuccess(RateLimiter.userKey(username));
+
             CookiesManager cookies = new CookiesManager(aRequest, aResponse);
-            cookies.add(SettingsManager.getTokenCookieName(), theTokenManager.createToken());
-            cookies.addUnsecure(SettingsManager.getTokenCookieAssignedName(), System.currentTimeMillis() + "");
+            cookies.add(SettingsManager.getTokenCookieName(), theTokenManager.createToken(username));
+            cookies.addAssignedMarker(SettingsManager.getTokenCookieAssignedName(), System.currentTimeMillis() + "");
             aResponse.sendRedirect(backUrl);
 
         } catch (ChangePasswordException e) {
@@ -107,10 +137,24 @@ public class LoginFormServlet extends HttpServlet {
 
         } catch (Exception e) {
             LOG.error("User "+username+" login failed", e);
-            showErrorForm(aResponse, backUrl, username, e.getMessage());
+            theRateLimiter.recordFailure(RateLimiter.userKey(username));
+            theRateLimiter.recordFailure(ipKey);
+            showErrorForm(aResponse, backUrl, username, "Authentication failed");
         }
+    }
 
+    static boolean tooLong(String value, int max) {
+        return value != null && value.length() > max;
+    }
 
+    static void putNonce(VelocityBuilder velocity, INonceManager nonceManager) {
+        String nonce = nonceManager.addNonce();
+        if (nonce == null) {
+            velocity.add("NONCE", "");
+            velocity.add("REASON", "Service busy");
+        } else {
+            velocity.add("NONCE", nonce);
+        }
     }
 
     public boolean canCheckAccess() {
@@ -130,6 +174,8 @@ public class LoginFormServlet extends HttpServlet {
     }
 
     private void showForm(String aAction, HttpServletResponse aResponse, String backUrl, String aUsername, String aErrorMessage, String aFormTemplate) throws IOException {
+        HttpRequestUtil.setNoStoreHeaders(aResponse);
+
         VelocityBuilder velocity = new VelocityBuilder();
 
         velocity.add("BACK_URL_NAME"  ,  BACK_URL_NAME              );
@@ -137,29 +183,15 @@ public class LoginFormServlet extends HttpServlet {
         velocity.add("FORM_ACTION"    , aAction                     );
         velocity.add("REASON"         , aErrorMessage               );
         velocity.add("USERNAME"       , aUsername                   );
-        velocity.add("NONCE"          , theNonceManager.addNonce()  );
         velocity.add("OTP_ENABLED"    , OTP_ENABLED                 );
+        putNonce(velocity, theNonceManager);
 
         velocity.processTemplate(LoginFormServlet.class, aFormTemplate, aResponse.getWriter());
     }
 
-//    private String createBackRedirectUrl(String aBackUrl) {
-//        StringBuilder sb = new StringBuilder();
-//        sb.append(aBackUrl);
-//        if(aBackUrl.contains("?")) {
-//            sb.append("&");
-//        } else {
-//            sb.append("?");
-//        }
-//        sb.append(SettingsManager.getTokenCookieName());
-//        sb.append("=");
-//        sb.append(UUID.randomUUID());
-//        LOG.info("redirect {}", sb);
-//        return sb.toString();
-//    }
-
     final IAuthService theAuthService = new AuthServiceImpl();
     private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
     private INonceManager theNonceManager = NonceManagerImpl.getInstance();
+    private final RateLimiter theRateLimiter = RateLimiter.getInstance();
 
 }

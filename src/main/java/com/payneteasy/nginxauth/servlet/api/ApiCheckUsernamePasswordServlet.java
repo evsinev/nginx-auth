@@ -3,12 +3,14 @@ package com.payneteasy.nginxauth.servlet.api;
 import com.google.gson.Gson;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
+import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.servlet.api.messages.CheckUsernamePasswordRequest;
+import com.payneteasy.nginxauth.util.HttpRequestUtil;
 
 import javax.naming.AuthenticationException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.Set;
@@ -49,11 +51,24 @@ public class ApiCheckUsernamePasswordServlet extends HttpServlet {
             return;
         }
 
+        String username = checkRequest.getUsername();
+        String ip = HttpRequestUtil.clientIp(aRequest);
+        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
+        RateLimiter rateLimiter = RateLimiter.getInstance();
+        if (rateLimiter.isBlocked(RateLimiter.userKey(username))
+                || rateLimiter.isBlocked(ipKey)) {
+            api.writeError(401, "Authentication failed");
+            return;
+        }
+
         try {
-            authService.authenticate(checkRequest.getUsername(), checkRequest.getPassword(), true);
-            api.writeSuccessResponse(checkRequest.getUsername());
+            authService.authenticate(username, checkRequest.getPassword(), true);
+            rateLimiter.recordSuccess(RateLimiter.userKey(username));
+            api.writeSuccessResponse(username);
         } catch (AuthenticationException e) {
-            api.writeError(401, e.getMessage(), e);
+            rateLimiter.recordFailure(RateLimiter.userKey(username));
+            rateLimiter.recordFailure(ipKey);
+            api.writeError(401, "Authentication failed", e);
         } catch (UserMustChangePasswordException e) {
             api.writeError(403, "User must change password", e);
         }
