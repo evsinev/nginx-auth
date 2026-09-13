@@ -1,6 +1,6 @@
 package com.payneteasy.nginxauth.util;
 
-import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 
 import java.util.HashSet;
 import java.util.Set;

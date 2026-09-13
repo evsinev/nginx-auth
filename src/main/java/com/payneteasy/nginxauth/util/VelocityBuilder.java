@@ -14,10 +14,8 @@ public class VelocityBuilder {
 
     public VelocityBuilder() {
         Properties p = new Properties();
-        p.setProperty("resource.loader", "class");
-        p.setProperty("class.resource.loader.class", "org.apache.velocity.runtime.resource.loader.ClasspathResourceLoader");
-        p.setProperty("runtime.log.logsystem.class", "org.apache.velocity.runtime.log.Log4JLogChute");
-        p.setProperty("runtime.log.logsystem.log4j.logger", "velocity");
+        p.setProperty("resource.loaders", "class");
+        p.setProperty("resource.loader.class.class", "org.apache.velocity.runtime.resource.loader.ClasspathResourceLoader");
 
         theEngine = new VelocityEngine(p);
 

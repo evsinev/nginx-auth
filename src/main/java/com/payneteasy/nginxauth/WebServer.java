@@ -1,6 +1,5 @@
 package com.payneteasy.nginxauth;
 
-import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.payneteasy.nginxauth.service.IAuthService;
@@ -19,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Set;
 
 import static com.payneteasy.nginxauth.util.SettingsManager.getAuthUrl;
+import static com.payneteasy.nginxauth.util.StringUtils.isEmpty;
 
 /**
  *
@@ -83,7 +83,7 @@ public class WebServer {
 
     private static void setTrustedStorePassword() {
         String password = System.getenv("TRUST_STORE_PASSWORD");
-        if(Strings.isNullOrEmpty(password)) {
+        if(isEmpty(password)) {
             return;
         }
 

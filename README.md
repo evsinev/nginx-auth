@@ -1,6 +1,8 @@
 nginx-auth
 ==========
 
+Requires **JDK 21**.
+
 ## Overview
 nginx-auth is a Java-based authentication service designed to add user authentication capabilities to nginx locations. 
 This service provides a secure way to protect your nginx-hosted web applications with username/password/otp authentication.

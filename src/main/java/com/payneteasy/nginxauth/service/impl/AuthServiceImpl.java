@@ -1,8 +1,5 @@
 package com.payneteasy.nginxauth.service.impl;
 
-import com.payneteasy.ldap.users.impl.DirectoryServiceImpl;
-import com.payneteasy.ldap.users.model.LdapQuery;
-import com.payneteasy.ldap.users.model.LdapQueryHolder;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
@@ -25,6 +22,11 @@ import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
 public class AuthServiceImpl implements IAuthService {
 
     private static final Logger LOG = LoggerFactory.getLogger(AuthServiceImpl.class);
+
+    private static final String[] USER_INFO_ATTRS = {
+            "cn", "gecos", "uid", "uidNumber", "authTimestamp", "pwdFailedTime",
+            "pwdChangedTime", "pwdReset", "pwdFailureTime", "pwdAccountLockedTime", "host"
+    };
 
     @Override
     public void authenticate(String aUsername, String aPassword, boolean aCanCheckAccess) throws AuthenticationException, UserMustChangePasswordException {
@@ -76,11 +78,8 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     private void checkAccess(String aUsername, InitialLdapContext context, boolean aCanCheckAccess) throws NamingException {
-        DirectoryServiceImpl directoryService = new DirectoryServiceImpl(context);
-        LdapQueryHolder queryHolder = new LdapQueryHolder(aUsername, SettingsManager.getLdapUsersDn());
-        LdapQuery ldapQuery = queryHolder.find("user-info");
-        if(aCanCheckAccess) {
-            directoryService.get(buildUserDn(aUsername), ldapQuery.attributes);
+        if (aCanCheckAccess) {
+            context.getAttributes(buildUserDn(aUsername), USER_INFO_ATTRS);
         }
     }
 
