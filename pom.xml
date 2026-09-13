@@ -86,6 +86,13 @@
             <version>1.15.0</version>
         </dependency>
 
+        <!-- Velocity 2.4.1 still pulls 3.17.0 (CVE-2025-48924 / GHSA-j288-q9x7-2f5v) -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.18.0</version>
+        </dependency>
+
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
