@@ -94,7 +94,9 @@ Coordination rule:
 - `LOGIN_MAX_FAILURES < pwdMaxFailure`
 - `LOGIN_LOCKOUT_SECONDS >= pwdFailureCountInterval`
 
-When both hold, nginx-auth cannot drive the LDAP counter to lockout. `LOGIN_IP_MAX_FAILURES` is stuffing protection and is not part of this math.
+When both hold, nginx-auth cannot drive the LDAP counter to lockout. Failures are counted per username across all IPs; a successful bind clears that username counter (same as LDAP `pwdFailureTime`). `LOGIN_IP_MAX_FAILURES` is stuffing protection and is not part of this math.
+
+A throttled request is rejected immediately. A wrong password still waits for the LDAP round-trip, so response time can show that the limiter fired. The form body and HTTP status stay `Authentication failed`.
 
 ### Edge protection
 
@@ -125,7 +127,7 @@ location = /auth/login { limit_req zone=auth_login burst=5 nodelay; proxy_pass h
 | SECURE_COOKIE              | true                       | Enable secure cookies            |
 | API_CHECK_ENABLED          | false                      | Enable /nginx-auth/api/check     |
 | API_CHECK_TOKENS           |                            | Access tokens delimited by comma |
-| LOGIN_MAX_FAILURES         | 2                          | Failed attempts on the user/pair bucket before throttle |
+| LOGIN_MAX_FAILURES         | 2                          | Failed attempts on the username bucket before throttle |
 | LOGIN_IP_MAX_FAILURES      | 20                         | Failed attempts from one IP before throttle (no delay) |
 | LOGIN_DELAYS_SECONDS       | 0,2                        | Delay in seconds before the n-th credential attempt |
 | LOGIN_LOCKOUT_SECONDS      | 300                        | Once throttled, at most one bind per this interval |

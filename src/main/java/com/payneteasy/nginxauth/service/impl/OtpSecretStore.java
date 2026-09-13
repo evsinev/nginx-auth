@@ -31,9 +31,9 @@ public class OtpSecretStore {
     private final boolean fileBacked;
 
     private volatile Map<String, String> secrets = Collections.emptyMap();
-    private boolean loaded;
+    private volatile boolean loaded;
     private long lastMtime = MISSING_MTIME;
-    private long lastCheckAt;
+    private volatile long lastCheckAt;
     private long lastErrorLogAt;
     private int loadCount;
 

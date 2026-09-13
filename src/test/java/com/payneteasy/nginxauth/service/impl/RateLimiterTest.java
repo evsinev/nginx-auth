@@ -70,19 +70,39 @@ public class RateLimiterTest {
     }
 
     @Test
-    public void succeededResetsPairOnly() {
+    public void rotatingIpsShareUserCounter() {
+        AtomicLong now = new AtomicLong(1_000L);
+        RateLimiter limiter = defaultLimiter(now);
+
+        RateLimiter.Attempt first = limiter.begin("1.1.1.1", "carol");
+        assertFalse(first.denied());
+        first.failed();
+
+        RateLimiter.Attempt second = limiter.begin("2.2.2.2", "carol");
+        assertFalse(second.denied());
+        assertEquals(2_000L, second.delayMillis());
+        second.failed();
+
+        assertTrue(limiter.begin("1.1.1.1", "carol").denied());
+        assertTrue(limiter.begin("2.2.2.2", "carol").denied());
+        assertTrue(limiter.begin("3.3.3.3", "carol").denied());
+    }
+
+    @Test
+    public void succeededClearsUserAcrossIps() {
         AtomicLong now = new AtomicLong(1_000L);
         RateLimiter limiter = defaultLimiter(now);
         limiter.begin("1.1.1.1", "alice").failed();
         limiter.begin("1.1.1.1", "alice").failed();
         limiter.begin("1.1.1.1", "alice").succeeded();
 
-        RateLimiter.Attempt samePair = limiter.begin("1.1.1.1", "alice");
-        assertFalse(samePair.denied());
-        assertEquals(0L, samePair.delayMillis());
+        RateLimiter.Attempt sameIp = limiter.begin("1.1.1.1", "alice");
+        assertFalse(sameIp.denied());
+        assertEquals(0L, sameIp.delayMillis());
 
         RateLimiter.Attempt otherIp = limiter.begin("2.2.2.2", "alice");
-        assertTrue(otherIp.denied());
+        assertFalse(otherIp.denied());
+        assertEquals(0L, otherIp.delayMillis());
 
         RateLimiter.Attempt otherUser = limiter.begin("1.1.1.1", "bob");
         assertFalse(otherUser.denied());
@@ -117,7 +137,9 @@ public class RateLimiterTest {
         RateLimiter.Attempt third = limiter.begin(null, "alice");
         assertTrue(third.denied());
         third.succeeded();
-        assertTrue(limiter.begin(null, "alice").denied());
+        RateLimiter.Attempt afterSuccess = limiter.begin(null, "alice");
+        assertFalse(afterSuccess.denied());
+        assertEquals(0L, afterSuccess.delayMillis());
     }
 
     @Test

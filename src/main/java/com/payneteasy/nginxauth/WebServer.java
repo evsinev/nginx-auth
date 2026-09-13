@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
 import com.payneteasy.nginxauth.service.impl.OneTimePasswordServiceImpl;
+import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernameOtpServlet;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernamePasswordServlet;
@@ -31,6 +32,7 @@ public class WebServer {
         setTrustedStorePassword();
 
         SettingsManager.logCurrentSettings();
+        RateLimiter.getInstance();
 
         Server server = new Server(SettingsManager.getConnectorPort());
 

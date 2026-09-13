@@ -15,19 +15,32 @@ public class RateLimiter {
 
     private static final long PURGE_INTERVAL_MILLIS = 30_000L;
 
-    private static final RateLimiter INSTANCE = new RateLimiter(
-            SettingsManager.getLoginMaxFailures(),
-            SettingsManager.getLoginIpMaxFailures(),
-            parseDelays(SettingsManager.getLoginDelaysSeconds()),
-            SettingsManager.getLoginLockoutSeconds() * 1000L,
-            SettingsManager.getLoginFailureWindowSeconds() * 1000L,
-            SettingsManager.getLoginMaxConcurrentDelays(),
-            System::currentTimeMillis,
-            Thread::sleep
-    );
+    private static volatile RateLimiter INSTANCE;
 
     public static RateLimiter getInstance() {
-        return INSTANCE;
+        RateLimiter instance = INSTANCE;
+        if (instance == null) {
+            synchronized (RateLimiter.class) {
+                instance = INSTANCE;
+                if (instance == null) {
+                    INSTANCE = instance = fromSettings();
+                }
+            }
+        }
+        return instance;
+    }
+
+    private static RateLimiter fromSettings() {
+        return new RateLimiter(
+                SettingsManager.getLoginMaxFailures(),
+                SettingsManager.getLoginIpMaxFailures(),
+                parseDelays(SettingsManager.getLoginDelaysSeconds()),
+                SettingsManager.getLoginLockoutSeconds() * 1000L,
+                SettingsManager.getLoginFailureWindowSeconds() * 1000L,
+                SettingsManager.getLoginMaxConcurrentDelays(),
+                System::currentTimeMillis,
+                Thread::sleep
+        );
     }
 
     private final int maxFailures;
@@ -74,16 +87,11 @@ public class RateLimiter {
         long now = clock.getAsLong();
         purgeExpired(now);
 
-        String userKey = userKey(username);
-        String ipKey = ip == null ? null : ipKey(ip);
-        String pairKey = ip == null ? null : pairKey(ip, username);
+        Bucket user = live(userKey(username), now);
+        int credFailures = user == null ? 0 : user.failures;
+        long credLastFailureAt = user == null ? 0L : user.lastFailureAt;
 
-        Bucket pair = live(pairKey, now);
-        Bucket cred = pair != null ? pair : live(userKey, now);
-        int credFailures = cred == null ? 0 : cred.failures;
-        long credLastFailureAt = cred == null ? 0L : cred.lastFailureAt;
-
-        Bucket ipBucket = live(ipKey, now);
+        Bucket ipBucket = ip == null ? null : live(ipKey(ip), now);
         int ipFailures = ipBucket == null ? 0 : ipBucket.failures;
         long ipLastFailureAt = ipBucket == null ? 0L : ipBucket.lastFailureAt;
 
@@ -147,7 +155,7 @@ public class RateLimiter {
         }
 
         public void succeeded() {
-            recordSuccess(ip, username);
+            recordSuccess(username);
         }
     }
 
@@ -185,15 +193,11 @@ public class RateLimiter {
         bump(userKey(username), now);
         if (ip != null) {
             bump(ipKey(ip), now);
-            bump(pairKey(ip, username), now);
         }
     }
 
-    private void recordSuccess(String ip, String username) {
-        if (ip == null) {
-            return;
-        }
-        buckets.put(pairKey(ip, username), new Bucket(0, clock.getAsLong()));
+    private void recordSuccess(String username) {
+        buckets.remove(userKey(username));
     }
 
     private void bump(String key, long now) {
@@ -242,10 +246,6 @@ public class RateLimiter {
 
     private static String ipKey(String ip) {
         return "ip:" + ip;
-    }
-
-    private static String pairKey(String ip, String username) {
-        return "pair:" + ip + "|" + username;
     }
 
     private static final class Bucket {
