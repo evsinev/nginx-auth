@@ -24,7 +24,7 @@
     </developers>
 
     <properties>
-        <slf4j.version>2.0.17</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jetty.version>12.1.13</jetty.version>
         <lombok.version>1.18.42</lombok.version>
