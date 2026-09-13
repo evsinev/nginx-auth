@@ -84,11 +84,10 @@ public class LoginFormServlet extends HttpServlet {
             return;
         }
 
-        String ip = HttpRequestUtil.clientIp(aRequest);
-        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
-        if (theRateLimiter.isBlocked(RateLimiter.userKey(username))
-                || theRateLimiter.isBlocked(ipKey)) {
-            LOG.warn("Login rate-limited [user:{}]", username);
+        RateLimiter.Attempt attempt = LoginAttempts.begin(aRequest, username);
+        attempt.awaitDelay();
+        if (attempt.denied()) {
+            LOG.warn("Login throttled [user:{}]", username);
             showErrorForm(aResponse, backUrl, username, "Authentication failed");
             return;
         }
@@ -120,7 +119,7 @@ public class LoginFormServlet extends HttpServlet {
 
             doCustomAction(username, password, aRequest);
 
-            theRateLimiter.recordSuccess(RateLimiter.userKey(username));
+            attempt.succeeded();
 
             CookiesManager cookies = new CookiesManager(aRequest, aResponse);
             cookies.add(SettingsManager.getTokenCookieName(), theTokenManager.createToken(username));
@@ -137,8 +136,7 @@ public class LoginFormServlet extends HttpServlet {
 
         } catch (Exception e) {
             LOG.error("User "+username+" login failed", e);
-            theRateLimiter.recordFailure(RateLimiter.userKey(username));
-            theRateLimiter.recordFailure(ipKey);
+            attempt.failed();
             showErrorForm(aResponse, backUrl, username, "Authentication failed");
         }
     }
@@ -192,6 +190,5 @@ public class LoginFormServlet extends HttpServlet {
     final IAuthService theAuthService = new AuthServiceImpl();
     private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
     private INonceManager theNonceManager = NonceManagerImpl.getInstance();
-    private final RateLimiter theRateLimiter = RateLimiter.getInstance();
 
 }
