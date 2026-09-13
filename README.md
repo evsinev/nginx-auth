@@ -75,7 +75,39 @@ This service provides a secure way to protect your nginx-hosted web applications
     }
 ```
 
-nginx **must** overwrite `X-Real-IP`. If that header is missing, IP lockout is skipped and only the per-username limit applies (otherwise every client behind nginx shares `127.0.0.1`). Use `limit_req` in nginx in addition to the in-process lockout.
+nginx **must** overwrite `X-Real-IP`. If that header is missing, IP throttle is skipped and only the per-username limit applies (otherwise every client behind nginx shares `127.0.0.1`). Use `limit_req` in nginx in addition to the in-process limiter.
+
+### LDAP password policy
+
+Limiter thresholds and LDAP ppolicy must be tuned together. The limiter only sees nginx-auth traffic; other LDAP clients still increment the same failure counter.
+
+Recommended starting point:
+
+```
+pwdMaxFailure           = 5–10
+pwdFailureCountInterval = 10–15 min   (not 0: 0 means the counter never resets)
+pwdLockoutDuration      = 10–30 min   (not 0: 0 means permanent lock)
+```
+
+Coordination rule:
+
+- `LOGIN_MAX_FAILURES < pwdMaxFailure`
+- `LOGIN_LOCKOUT_SECONDS >= pwdFailureCountInterval`
+
+When both hold, nginx-auth cannot drive the LDAP counter to lockout. Failures are counted per username across all IPs; a successful bind clears that username counter (same as LDAP `pwdFailureTime`). `LOGIN_IP_MAX_FAILURES` is stuffing protection and is not part of this math.
+
+A throttled request is rejected immediately. A wrong password still waits for the LDAP round-trip, so response time can show that the limiter fired. The form body and HTTP status stay `Authentication failed`.
+
+### Edge protection
+
+Put a rate limit in front of `POST /auth/login`. Cloudflare example: 5 requests per minute per IP, action block for 10 minutes; optionally Turnstile on the form.
+
+nginx example:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=auth_login:10m rate=5r/m;
+location = /auth/login { limit_req zone=auth_login burst=5 nodelay; proxy_pass http://127.0.0.1:9091; }
+```
 
 ## Environment variables
 
@@ -91,9 +123,14 @@ nginx **must** overwrite `X-Real-IP`. If that header is missing, IP lockout is s
 | LDAP_URL                   | ldaps://localhost:636      | LDAP server url                  |
 | LDAP_USERS_DN              | ou=users,dc=example,dc=com | LDAP Users DN                    |
 | OTP_ENABLED                | true                       | Enable OTP                       |
+| OTP_SECRETS_FILE           | otp.properties             | TOTP secrets; reread on mtime change (at most every 5 s) |
 | SECURE_COOKIE              | true                       | Enable secure cookies            |
 | API_CHECK_ENABLED          | false                      | Enable /nginx-auth/api/check     |
 | API_CHECK_TOKENS           |                            | Access tokens delimited by comma |
-| LOGIN_MAX_FAILURES         | 5                          | Failed logins before lockout     |
-| LOGIN_LOCKOUT_SECONDS      | 300                        | Lockout window in seconds        |
-| CLIENT_IP_HEADER           | X-Real-IP                  | Client IP for lockout; skipped if absent. nginx must overwrite it |
+| LOGIN_MAX_FAILURES         | 2                          | Failed attempts on the username bucket before throttle |
+| LOGIN_IP_MAX_FAILURES      | 20                         | Failed attempts from one IP before throttle (no delay) |
+| LOGIN_DELAYS_SECONDS       | 0,2                        | Delay in seconds before the n-th credential attempt |
+| LOGIN_LOCKOUT_SECONDS      | 300                        | Once throttled, at most one bind per this interval |
+| LOGIN_FAILURE_WINDOW_SECONDS | 900                      | Idle TTL for a limiter bucket    |
+| LOGIN_MAX_CONCURRENT_DELAYS | 32                        | Cap on requests sleeping in a delay |
+| CLIENT_IP_HEADER           | X-Real-IP                  | Client IP for limiter; skipped if absent. nginx must overwrite it |

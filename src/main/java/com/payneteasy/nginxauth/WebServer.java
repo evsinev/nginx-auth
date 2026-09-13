@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
 import com.payneteasy.nginxauth.service.impl.OneTimePasswordServiceImpl;
+import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.servlet.*;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernameOtpServlet;
 import com.payneteasy.nginxauth.servlet.api.ApiCheckUsernamePasswordServlet;
@@ -31,6 +32,7 @@ public class WebServer {
         setTrustedStorePassword();
 
         SettingsManager.logCurrentSettings();
+        RateLimiter.getInstance();
 
         Server server = new Server(SettingsManager.getConnectorPort());
 
@@ -62,7 +64,7 @@ public class WebServer {
     private static void addApiCheckServlets(ServletContextHandler context) {
         LOG.info("Adding api check servlets: /nginx-auth/api/check/check-password and /nginx-auth/api/check/check-otp");
 
-        OneTimePasswordServiceImpl oneTimePasswordService = new OneTimePasswordServiceImpl();
+        OneTimePasswordServiceImpl oneTimePasswordService = OneTimePasswordServiceImpl.getInstance();
         Set<String>                accessTokens           = SettingsManager.getAccessTokens();
         IAuthService               authService            = new AuthServiceImpl();
         Gson gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();

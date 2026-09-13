@@ -31,11 +31,16 @@ public class SettingsManager {
         , LDAP_URL                   ( "ldaps://localhost:636"      )
         , LDAP_USERS_DN              ( "ou=users,dc=example,dc=com" )
         , OTP_ENABLED                ( "true"                       )
+        , OTP_SECRETS_FILE           ( "otp.properties"             )
         , SECURE_COOKIE              ( "true"                       )
         , API_CHECK_ENABLED          ( "false"                      )
         , API_CHECK_TOKENS           ( "", true               )
-        , LOGIN_MAX_FAILURES         ( "5"                          )
+        , LOGIN_MAX_FAILURES         ( "2"                          )
+        , LOGIN_IP_MAX_FAILURES      ( "20"                         )
+        , LOGIN_DELAYS_SECONDS       ( "0,2"                        )
         , LOGIN_LOCKOUT_SECONDS      ( "300"                        )
+        , LOGIN_FAILURE_WINDOW_SECONDS ( "900"                      )
+        , LOGIN_MAX_CONCURRENT_DELAYS ( "32"                        )
         , CLIENT_IP_HEADER           ( "X-Real-IP"                  )
         ;
 
@@ -140,6 +145,10 @@ public class SettingsManager {
         return getBoolean(OTP_ENABLED);
     }
 
+    public static String getOtpSecretsFile() {
+        return get(OTP_SECRETS_FILE);
+    }
+
     public static boolean getSecureCookie() {
         return getBoolean(SECURE_COOKIE);
     }
@@ -152,8 +161,24 @@ public class SettingsManager {
         return Integer.parseInt(get(LOGIN_MAX_FAILURES));
     }
 
+    public static int getLoginIpMaxFailures() {
+        return Integer.parseInt(get(LOGIN_IP_MAX_FAILURES));
+    }
+
+    public static String getLoginDelaysSeconds() {
+        return get(LOGIN_DELAYS_SECONDS);
+    }
+
     public static int getLoginLockoutSeconds() {
         return Integer.parseInt(get(LOGIN_LOCKOUT_SECONDS));
+    }
+
+    public static int getLoginFailureWindowSeconds() {
+        return Integer.parseInt(get(LOGIN_FAILURE_WINDOW_SECONDS));
+    }
+
+    public static int getLoginMaxConcurrentDelays() {
+        return Integer.parseInt(get(LOGIN_MAX_CONCURRENT_DELAYS));
     }
 
     public static String getClientIpHeader() {

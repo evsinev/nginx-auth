@@ -5,7 +5,7 @@ import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
 import com.payneteasy.nginxauth.service.impl.RateLimiter;
 import com.payneteasy.nginxauth.servlet.api.messages.CheckUsernamePasswordRequest;
-import com.payneteasy.nginxauth.util.HttpRequestUtil;
+import com.payneteasy.nginxauth.util.LoginAttempts;
 
 import javax.naming.AuthenticationException;
 import jakarta.servlet.http.HttpServlet;
@@ -52,22 +52,19 @@ public class ApiCheckUsernamePasswordServlet extends HttpServlet {
         }
 
         String username = checkRequest.getUsername();
-        String ip = HttpRequestUtil.clientIp(aRequest);
-        String ipKey = ip == null ? null : RateLimiter.ipKey(ip);
-        RateLimiter rateLimiter = RateLimiter.getInstance();
-        if (rateLimiter.isBlocked(RateLimiter.userKey(username))
-                || rateLimiter.isBlocked(ipKey)) {
-            api.writeError(401, "Authentication failed");
+        RateLimiter.Attempt attempt = LoginAttempts.begin(aRequest, username);
+        attempt.awaitDelay();
+        if (attempt.denied()) {
+            api.writeError(429, "Too many attempts");
             return;
         }
 
         try {
             authService.authenticate(username, checkRequest.getPassword(), true);
-            rateLimiter.recordSuccess(RateLimiter.userKey(username));
+            attempt.succeeded();
             api.writeSuccessResponse(username);
         } catch (AuthenticationException e) {
-            rateLimiter.recordFailure(RateLimiter.userKey(username));
-            rateLimiter.recordFailure(ipKey);
+            attempt.failed();
             api.writeError(401, "Authentication failed", e);
         } catch (UserMustChangePasswordException e) {
             api.writeError(403, "User must change password", e);
