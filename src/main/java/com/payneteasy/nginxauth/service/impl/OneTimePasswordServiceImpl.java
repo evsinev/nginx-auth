@@ -4,11 +4,7 @@ import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
@@ -20,38 +16,52 @@ public class OneTimePasswordServiceImpl implements IOneTimePasswordService {
 
     private static final long REPLAY_TTL_MILLIS = 120_000L;
 
-    public OneTimePasswordServiceImpl() {
-        this(OneTimePasswordServiceImpl::loadSecretFromFile, System::currentTimeMillis);
+    private static final OneTimePasswordServiceImpl INSTANCE = new OneTimePasswordServiceImpl();
+
+    public static OneTimePasswordServiceImpl getInstance() {
+        return INSTANCE;
     }
 
-    OneTimePasswordServiceImpl(Function<String, String> secrets, LongSupplier clock) {
-        this.secrets = secrets;
+    private OneTimePasswordServiceImpl() {
+        this(OtpSecretStore.fromSettings(), System::currentTimeMillis, new GoogleAuthenticator());
+    }
+
+    OneTimePasswordServiceImpl(OtpSecretStore store, LongSupplier clock, GoogleAuthenticator googleAuthenticator) {
+        this.store = store;
         this.clock = clock;
+        this.theGoogleAuthenticator = googleAuthenticator;
         theGoogleAuthenticator.setWindowSize(1);
     }
 
     @Override
     public boolean checkCode(String aUsername, long aCode) {
-        String secret = secrets.apply(aUsername);
-        if (secret == null) {
-            LOG.warn("Can't find secret for user {}", aUsername);
-            return false;
+        String secret = store.getSecret(aUsername);
+        boolean known = secret != null;
+        if (!known) {
+            secret = store.dummySecret();
         }
 
         long now = clock.getAsLong();
         purgeExpiredReplays(now);
 
+        boolean ok = theGoogleAuthenticator.check_code(secret, aCode, now);
+
         String replayKey = aUsername + ":" + aCode;
         Long expiresAt = usedCodes.get(replayKey);
-        if (expiresAt != null && expiresAt > now) {
-            return false;
-        }
+        boolean replayed = expiresAt != null && expiresAt > now;
 
-        boolean ok = theGoogleAuthenticator.check_code(secret, aCode, now);
-        if (ok) {
+        boolean accepted = known && ok && !replayed;
+        if (accepted) {
             usedCodes.put(replayKey, now + REPLAY_TTL_MILLIS);
         }
-        return ok;
+        LOG.debug("OTP {} for user {}", accepted ? "accepted" : "rejected", aUsername);
+        return accepted;
+    }
+
+    @Override
+    public void dummyCheck(long aCode) {
+        long now = clock.getAsLong();
+        theGoogleAuthenticator.check_code(store.dummySecret(), aCode, now);
     }
 
     int codeAt(String secret, long timeMsec) {
@@ -62,24 +72,8 @@ public class OneTimePasswordServiceImpl implements IOneTimePasswordService {
         usedCodes.entrySet().removeIf(entry -> entry.getValue() <= now);
     }
 
-    private static String loadSecretFromFile(String username) {
-        try {
-            FileInputStream in = new FileInputStream("otp.properties");
-            try {
-                Properties properties = new Properties();
-                properties.load(in);
-                return properties.getProperty(username);
-            } finally {
-                in.close();
-            }
-        } catch (IOException e) {
-            LOG.error("Can't read otp.properties");
-            return null;
-        }
-    }
-
-    private final Function<String, String> secrets;
+    private final OtpSecretStore store;
     private final LongSupplier clock;
-    private final GoogleAuthenticator theGoogleAuthenticator = new GoogleAuthenticator();
+    private final GoogleAuthenticator theGoogleAuthenticator;
     private final ConcurrentHashMap<String, Long> usedCodes = new ConcurrentHashMap<String, Long>();
 }

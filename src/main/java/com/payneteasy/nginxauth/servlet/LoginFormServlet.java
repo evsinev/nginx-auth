@@ -104,11 +104,11 @@ public class LoginFormServlet extends HttpServlet {
                     return;
                 }
 
-                long verificationCode = 0;
+                long verificationCode = -1;
                 try {
                     verificationCode = Long.parseLong(otp);
                 } catch (Exception e) {
-                    LOG.warn("Verification code is not number [user:{}]", username);
+                    LOG.debug("Verification code is not number [user:{}]", username);
                 }
 
                 theAuthService.authenticate(username, password, verificationCode, canCheckAccess());

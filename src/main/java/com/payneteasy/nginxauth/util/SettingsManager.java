@@ -31,6 +31,7 @@ public class SettingsManager {
         , LDAP_URL                   ( "ldaps://localhost:636"      )
         , LDAP_USERS_DN              ( "ou=users,dc=example,dc=com" )
         , OTP_ENABLED                ( "true"                       )
+        , OTP_SECRETS_FILE           ( "otp.properties"             )
         , SECURE_COOKIE              ( "true"                       )
         , API_CHECK_ENABLED          ( "false"                      )
         , API_CHECK_TOKENS           ( "", true               )
@@ -138,6 +139,10 @@ public class SettingsManager {
 
     public static boolean isOtpEnabled() {
         return getBoolean(OTP_ENABLED);
+    }
+
+    public static String getOtpSecretsFile() {
+        return get(OTP_SECRETS_FILE);
     }
 
     public static boolean getSecureCookie() {

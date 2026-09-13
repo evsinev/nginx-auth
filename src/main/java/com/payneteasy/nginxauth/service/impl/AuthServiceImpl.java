@@ -28,6 +28,15 @@ public class AuthServiceImpl implements IAuthService {
             "pwdChangedTime", "pwdReset", "pwdFailureTime", "pwdAccountLockedTime", "host"
     };
 
+    public AuthServiceImpl() {
+        this(OneTimePasswordServiceImpl.getInstance(), AuthServiceImpl::bind);
+    }
+
+    AuthServiceImpl(IOneTimePasswordService otp, LdapBinder binder) {
+        this.theOneTimePasswordService = otp;
+        this.theLdapBinder = binder;
+    }
+
     @Override
     public void authenticate(String aUsername, String aPassword, boolean aCanCheckAccess) throws AuthenticationException, UserMustChangePasswordException {
         try {
@@ -58,14 +67,17 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     private InitialLdapContext createInitialLdapContext(String aUsername, String aPassword) throws NamingException {
-        String user = buildUserDn(aUsername);
-        LOG.debug("Connecting to ldap with {}...", user);
+        return theLdapBinder.bind(buildUserDn(aUsername), aPassword);
+    }
+
+    private static InitialLdapContext bind(String dn, String password) throws NamingException {
+        LOG.debug("Connecting to ldap with {}...", dn);
 
         Properties env = new Properties();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL           , SettingsManager.getLdapUrl());
-        env.put(Context.SECURITY_PRINCIPAL     , user);
-        env.put(Context.SECURITY_CREDENTIALS   , aPassword);
+        env.put(Context.SECURITY_PRINCIPAL     , dn);
+        env.put(Context.SECURITY_CREDENTIALS   , password);
 
         return new InitialLdapContext(env, null);
     }
@@ -86,14 +98,21 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public void authenticate(String aUsername, String aPassword, long aCode, boolean aCanCheckAccess) throws AuthenticationException, UserMustChangePasswordException {
 
-        authenticate(aUsername, aPassword, aCanCheckAccess);
+        try {
+            authenticate(aUsername, aPassword, aCanCheckAccess);
+        } catch (AuthenticationException e) {
+            theOneTimePasswordService.dummyCheck(aCode);
+            throw e;
+        }
 
         if (!theOneTimePasswordService.checkCode(aUsername, aCode)) {
-            throw new AuthenticationException("Verification code is invalid");
+            LOG.debug("OTP verification failed for user {}", aUsername);
+            throw new AuthenticationException("Authentication failed");
         }
     }
 
-    private IOneTimePasswordService theOneTimePasswordService = new OneTimePasswordServiceImpl();
+    private final IOneTimePasswordService theOneTimePasswordService;
+    private final LdapBinder theLdapBinder;
 
     public void changePassword(String aUsername, String aCurrentPassword, String aNewPassword) throws AuthenticationException {
         try {

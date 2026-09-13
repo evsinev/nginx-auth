@@ -91,6 +91,7 @@ nginx **must** overwrite `X-Real-IP`. If that header is missing, IP lockout is s
 | LDAP_URL                   | ldaps://localhost:636      | LDAP server url                  |
 | LDAP_USERS_DN              | ou=users,dc=example,dc=com | LDAP Users DN                    |
 | OTP_ENABLED                | true                       | Enable OTP                       |
+| OTP_SECRETS_FILE           | otp.properties             | TOTP secrets; reread on mtime change (at most every 5 s) |
 | SECURE_COOKIE              | true                       | Enable secure cookies            |
 | API_CHECK_ENABLED          | false                      | Enable /nginx-auth/api/check     |
 | API_CHECK_TOKENS           |                            | Access tokens delimited by comma |
