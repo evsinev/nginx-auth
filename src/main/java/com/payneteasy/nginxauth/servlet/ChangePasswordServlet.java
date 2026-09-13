@@ -1,7 +1,6 @@
 package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.service.ChangePasswordException;
-import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
 import com.payneteasy.nginxauth.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +15,16 @@ public class ChangePasswordServlet extends LoginFormServlet {
     @Override
     public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
 
-        String password_1 = StringUtils.escape(aRequest.getParameter("j_password_new_1"));
-        String password_2 = StringUtils.escape(aRequest.getParameter("j_password_new_2"));
+        String password_1 = aRequest.getParameter("j_password_new_1");
+        String password_2 = aRequest.getParameter("j_password_new_2");
+
+        if (tooLong(password_1, MAX_PASSWORD) || tooLong(password_2, MAX_PASSWORD)) {
+            throw new ChangePasswordException("New password is too long");
+        }
+
+        if (StringUtils.isEmpty(password_1) || StringUtils.isEmpty(password_2)) {
+            throw new ChangePasswordException("New password is empty");
+        }
 
         if(!password_1.equals(password_2)) {
             throw new ChangePasswordException("New passwords do not match");
@@ -27,7 +34,7 @@ public class ChangePasswordServlet extends LoginFormServlet {
             theAuthService.changePassword(aUsername, aCurrentPassword, password_1);
         } catch (AuthenticationException e) {
             LOG.error("Could not change password", e);
-            throw new ChangePasswordException("Could not change password: " + e.getExplanation());
+            throw new ChangePasswordException("Could not change password");
         }
 
     }

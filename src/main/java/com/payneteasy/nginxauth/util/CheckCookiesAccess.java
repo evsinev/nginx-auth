@@ -14,11 +14,7 @@ public class CheckCookiesAccess {
 
     public boolean isValidToken(HttpServletRequest aRequest, HttpServletResponse aResponse) {
         CookiesManager cookies = new CookiesManager(aRequest, aResponse);
-        String         token   = cookies.getCookieValue(TOKEN_COOKIE_NAME);
-        if (token == null) {
-            token = aRequest.getParameter(TOKEN_COOKIE_NAME);
-        }
-
+        String token = cookies.getCookieValue(TOKEN_COOKIE_NAME);
         return tokenManager.validateToken(token);
     }
 

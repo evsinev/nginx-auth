@@ -35,6 +35,7 @@ public class WebServer {
         Server server = new Server(SettingsManager.getConnectorPort());
 
         ServletContextHandler context  = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
+        context.setAttribute("org.eclipse.jetty.cookie.sameSiteDefault", "Lax");
 
         context.addServlet(CheckAccessServlet.class     ,  "/*"                              ).setAsyncSupported(true);
         context.addServlet(ShowLoginFormServlet.class   ,  getAuthUrl() + "/*"               ).setAsyncSupported(true);

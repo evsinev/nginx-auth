@@ -14,9 +14,6 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 
-/**
- *
- */
 public class CheckAccessServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(CheckAccessServlet.class);
 
@@ -30,43 +27,27 @@ public class CheckAccessServlet extends HttpServlet {
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
 
-        // Log request
         HttpRequestUtil.logDebug(aRequest);
 
-        // check access token cookie
         if (checkCookiesAccess.isValidToken(aRequest, aResponse)) {
-            // nginx internal redirect
             aResponse.setHeader(X_ACCEL_REDIRECT, createInternalUriRedirect(aRequest));
         } else {
-            // redirect to /auth
             aResponse.sendRedirect(createRedirectUrlToAuth(aRequest));
         }
     }
 
     private String createRedirectUrlToAuth(HttpServletRequest aRequest) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(AUTH_URL);
-        sb.append("?");
-        sb.append(BACK_URL_NAME);
-        sb.append("=");
-        String requestUrl = removeDangerousCharacters(getRequestUrl(aRequest));
+        StringBuilder back = new StringBuilder();
+        back.append(aRequest.getRequestURI());
+        String queryString = aRequest.getQueryString();
+        if (queryString != null) {
+            back.append('?').append(queryString);
+        }
         try {
-            sb.append(URLEncoder.encode(requestUrl, "utf-8"));
+            return AUTH_URL + "?" + BACK_URL_NAME + "=" + URLEncoder.encode(back.toString(), "utf-8");
         } catch (UnsupportedEncodingException e) {
             throw new IllegalStateException("Can't create url", e);
         }
-        return sb.toString();
-    }
-
-    private static String removeDangerousCharacters(String aRequestUrl) {
-        if(aRequestUrl == null) {
-            return null;
-        }
-
-        if(aRequestUrl.contains("<script")) {
-            return aRequestUrl.replace("<script", "noscript");
-        }
-        return aRequestUrl;
     }
 
     private static String createInternalUriRedirect(HttpServletRequest aRequest) {
@@ -80,19 +61,6 @@ public class CheckAccessServlet extends HttpServlet {
         }
         LOG.info("Internal redirect {}", sb);
         return sb.toString();
-    }
-
-
-
-    public static String getRequestUrl(HttpServletRequest aRequest) {
-        StringBuffer reqUrl = aRequest.getRequestURL();
-        String queryString = aRequest.getQueryString();
-        if (queryString != null) {
-            reqUrl.append("?");
-            reqUrl.append(queryString);
-
-        }
-        return reqUrl.toString();
     }
 
 }

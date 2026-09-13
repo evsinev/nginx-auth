@@ -78,13 +78,10 @@ public class StringUtils {
         return sb.toString();
     }
 
-    public static String escape(final String aText) {
-        if(aText == null) {
+    public static String escapeHtml(final String aText) {
+        if (aText == null) {
             return null;
         }
-
-        return StringEscapeUtils.escapeHtml4(
-                aText.length() > 1024 ? aText.substring(0, 50) : aText
-        );
+        return StringEscapeUtils.escapeHtml4(aText);
     }
 }

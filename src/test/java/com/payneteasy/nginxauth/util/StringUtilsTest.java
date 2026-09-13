@@ -26,10 +26,15 @@ public class StringUtilsTest {
     }
 
     @Test
-    public void testEscapeInvalidSymbols(){
-        String escapedBackUrl = StringUtils.escape("http://google.com/\"<script src=\"http://evil.com/dangerous.js\" type=\"text/javascript\" charset=\"utf-8\"></script>");
-        Assert.assertFalse(escapedBackUrl.contains(">"));
-        Assert.assertFalse(escapedBackUrl.contains("<"));
-        Assert.assertFalse(escapedBackUrl.contains("\""));
+    public void testEscapeHtml() {
+        String escaped = StringUtils.escapeHtml("http://google.com/\"<script src=\"http://evil.com/dangerous.js\" type=\"text/javascript\" charset=\"utf-8\"></script>");
+        Assert.assertFalse(escaped.contains(">"));
+        Assert.assertFalse(escaped.contains("<"));
+        Assert.assertFalse(escaped.contains("\""));
+        Assert.assertEquals("&amp;", StringUtils.escapeHtml("&"));
+        String longInput = new String(new char[2000]).replace('\0', 'a') + "<";
+        String longEscaped = StringUtils.escapeHtml(longInput);
+        assertEquals(2000, longEscaped.indexOf("&lt;"));
+        Assert.assertTrue(longEscaped.endsWith("&lt;"));
     }
 }

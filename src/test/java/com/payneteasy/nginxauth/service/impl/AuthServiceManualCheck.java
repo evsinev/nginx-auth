@@ -4,7 +4,7 @@ import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
 
 import javax.naming.AuthenticationException;
 
-public class AuthServiceImplTest {
+public class AuthServiceManualCheck {
 
     public static void main(String[] args) throws AuthenticationException {
 

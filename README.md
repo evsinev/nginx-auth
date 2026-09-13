@@ -43,20 +43,24 @@ This service provides a secure way to protect your nginx-hosted web applications
 
 ### nginx using auth_request
 
+`back` must be a relative path on the same host. An external auth domain is not supported.
+
 ```nginx configuration
     location /srvlog {
         proxy_pass http://127.0.0.1:9091;
 
-        auth_request            http://127.0.0.1:9091/nginx-auth-request-check;
+        auth_request            http://127.0.0.1:9091/auth/nginx-auth-request-check;
         proxy_pass_request_body off;
         error_page              401 @error401;
     }
     
     location @error401 {
       # In place of a 401 error, we rewrite to a 302 that shows the login page
-      return 302 https://auth.example.com/?url=$scheme://$http_host$request_uri;
+      return 302 /auth?back=$request_uri;
     }
 ```
+
+Use `limit_req` in nginx in addition to the in-process login lockout.
 
 ## Environment variables
 
@@ -75,3 +79,6 @@ This service provides a secure way to protect your nginx-hosted web applications
 | SECURE_COOKIE              | true                       | Enable secure cookies            |
 | API_CHECK_ENABLED          | false                      | Enable /nginx-auth/api/check     |
 | API_CHECK_TOKENS           |                            | Access tokens delimited by comma |
+| LOGIN_MAX_FAILURES         | 5                          | Failed logins before lockout     |
+| LOGIN_LOCKOUT_SECONDS      | 300                        | Lockout window in seconds        |
+| CLIENT_IP_HEADER           | X-Real-IP                  | Client IP header (nginx must overwrite it) |
