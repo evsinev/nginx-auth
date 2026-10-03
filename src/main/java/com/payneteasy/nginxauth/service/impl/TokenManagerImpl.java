@@ -1,15 +1,20 @@
 package com.payneteasy.nginxauth.service.impl;
 
+import com.payneteasy.nginxauth.service.AuthenticationMethod;
 import com.payneteasy.nginxauth.service.ITokenManager;
+import com.payneteasy.nginxauth.service.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 
 public class TokenManagerImpl implements ITokenManager {
     private static final Logger LOG = LoggerFactory.getLogger(TokenManagerImpl.class);
@@ -22,7 +27,7 @@ public class TokenManagerImpl implements ITokenManager {
         this(DEFAULT_INACTIVITY_MILLIS, System::currentTimeMillis);
     }
 
-    TokenManagerImpl(long inactivityMillis, LongSupplier clock) {
+    public TokenManagerImpl(long inactivityMillis, LongSupplier clock) {
         this.inactivityMillis = inactivityMillis;
         this.clock = clock;
     }
@@ -33,17 +38,16 @@ public class TokenManagerImpl implements ITokenManager {
 
     @Override
     public String createToken(String username) {
+        return createSession(Session.withoutWebAuthn(username, username, Collections.emptyList(), AuthenticationMethod.LDAP_ONLY, clock.getAsLong()));
+    }
+
+    @Override
+    public String createSession(Session aSession) {
         theLock.writeLock().lock();
         try {
             removeExpired();
-
-            Token token = new Token();
-            token.lastAccessTime = clock.getAsLong();
-            token.username = username;
-            String key = UUID.randomUUID().toString();
-            token.id = key;
-            theMap.put(key, token);
-            LOG.debug("Token created for user {}", username);
+            String key = put(aSession);
+            LOG.debug("Session created for user {} with {}", aSession.getCanonicalUid(), aSession.getMethod());
             return key;
         } finally {
             theLock.writeLock().unlock();
@@ -52,36 +56,35 @@ public class TokenManagerImpl implements ITokenManager {
 
     @Override
     public boolean validateToken(String aTokenValue) {
-        if (aTokenValue == null) {
-            return false;
-        }
+        return getSession(aTokenValue).isPresent();
+    }
 
-        Token token;
-        theLock.readLock().lock();
-        try {
-            token = theMap.get(aTokenValue);
-        } finally {
-            theLock.readLock().unlock();
-        }
+    @Override
+    public Optional<Session> getSession(String aTokenValue) {
+        return lookup(aTokenValue, true);
+    }
 
-        if (token == null) {
-            return false;
-        }
+    @Override
+    public Optional<Session> peekSession(String aTokenValue) {
+        return lookup(aTokenValue, false);
+    }
 
-        if (isExpired(token)) {
-            theLock.writeLock().lock();
-            try {
-                theMap.remove(aTokenValue);
-                return false;
-            } finally {
-                theLock.writeLock().unlock();
-            }
+    @Override
+    public Optional<String> replaceIfActive(String aOldToken, Session aNewSession) {
+        if (aOldToken == null) {
+            return Optional.empty();
         }
-
         theLock.writeLock().lock();
         try {
-            token.lastAccessTime = clock.getAsLong();
-            return true;
+            Token old = theMap.get(aOldToken);
+            if (old == null) {
+                return Optional.empty();
+            }
+            theMap.remove(aOldToken);
+            if (isExpired(old)) {
+                return Optional.empty();
+            }
+            return Optional.of(put(aNewSession));
         } finally {
             theLock.writeLock().unlock();
         }
@@ -100,12 +103,75 @@ public class TokenManagerImpl implements ITokenManager {
         }
     }
 
+    @Override
+    public void invalidateUser(String aCanonicalUid) {
+        removeIf(session -> aCanonicalUid.equals(session.getCanonicalUid()));
+    }
+
+    @Override
+    public void invalidateByCredential(String aCanonicalUid, String aCredentialId) {
+        removeIf(session -> aCanonicalUid.equals(session.getCanonicalUid()) && aCredentialId.equals(session.getCredentialId()));
+    }
+
     int size() {
         theLock.readLock().lock();
         try {
             return theMap.size();
         } finally {
             theLock.readLock().unlock();
+        }
+    }
+
+    private Optional<Session> lookup(String aTokenValue, boolean touch) {
+        if (aTokenValue == null) {
+            return Optional.empty();
+        }
+
+        Token token;
+        theLock.readLock().lock();
+        try {
+            token = theMap.get(aTokenValue);
+        } finally {
+            theLock.readLock().unlock();
+        }
+
+        if (token == null) {
+            return Optional.empty();
+        }
+
+        theLock.writeLock().lock();
+        try {
+            if (theMap.get(aTokenValue) != token) {
+                return Optional.empty();
+            }
+            if (isExpired(token)) {
+                theMap.remove(aTokenValue);
+                return Optional.empty();
+            }
+            if (touch) {
+                token.lastAccessTime = clock.getAsLong();
+            }
+            return Optional.of(token.session);
+        } finally {
+            theLock.writeLock().unlock();
+        }
+    }
+
+    private String put(Session aSession) {
+        Token token = new Token();
+        token.lastAccessTime = clock.getAsLong();
+        token.session = aSession;
+        String key = UUID.randomUUID().toString();
+        theMap.put(key, token);
+        return key;
+    }
+
+    private void removeIf(Predicate<Session> aPredicate) {
+        theLock.writeLock().lock();
+        try {
+            theMap.values().removeIf(token -> aPredicate.test(token.session));
+        } finally {
+            theLock.writeLock().unlock();
         }
     }
 
@@ -124,8 +190,7 @@ public class TokenManagerImpl implements ITokenManager {
     }
 
     static class Token {
-        private String id;
-        private String username;
+        private Session session;
         private long lastAccessTime;
     }
 

@@ -1,5 +1,7 @@
 package com.payneteasy.nginxauth.service.impl;
 
+import com.payneteasy.nginxauth.ldap.LdapAttributeNames;
+import com.payneteasy.nginxauth.ldap.LdapPrincipal;
 import com.payneteasy.nginxauth.service.IAuthService;
 import com.payneteasy.nginxauth.service.IOneTimePasswordService;
 import com.payneteasy.nginxauth.service.UserMustChangePasswordException;
@@ -8,11 +10,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.naming.*;
+import javax.naming.directory.Attributes;
 import javax.naming.directory.BasicAttribute;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.ModificationItem;
 import javax.naming.ldap.InitialLdapContext;
 import java.util.Properties;
+import java.util.function.LongSupplier;
 
 import static com.payneteasy.nginxauth.util.StringUtils.escapeDN;
 
@@ -28,13 +32,54 @@ public class AuthServiceImpl implements IAuthService {
             "pwdChangedTime", "pwdReset", "pwdFailureTime", "pwdAccountLockedTime", "host"
     };
 
+    interface AttributeReader {
+        Attributes read(InitialLdapContext aContext, String aDn, String[] aAttributes) throws NamingException;
+    }
+
     public AuthServiceImpl() {
         this(OneTimePasswordServiceImpl.getInstance(), AuthServiceImpl::bind);
     }
 
     AuthServiceImpl(IOneTimePasswordService otp, LdapBinder binder) {
+        this(otp, binder, InitialLdapContext::getAttributes, null, System::currentTimeMillis);
+    }
+
+    AuthServiceImpl(IOneTimePasswordService otp, LdapBinder binder, AttributeReader reader, LdapAttributeNames names, LongSupplier clock) {
         this.theOneTimePasswordService = otp;
         this.theLdapBinder = binder;
+        this.theAttributeReader = reader;
+        this.theAttributeNames = names;
+        this.theClock = clock;
+    }
+
+    @Override
+    public LdapPrincipal authenticatePrincipal(String aUsername, String aPassword) throws AuthenticationException, UserMustChangePasswordException {
+        LdapAttributeNames names = theAttributeNames != null ? theAttributeNames : LdapAttributeNames.fromSettings();
+        try {
+            InitialLdapContext context = createInitialLdapContext(aUsername, aPassword);
+            try {
+                Attributes attributes = theAttributeReader.read(context, buildUserDn(aUsername), names.asArray());
+                return LdapPrincipal.fromAttributes(attributes, names, theClock.getAsLong());
+            } finally {
+                context.close();
+            }
+
+        } catch (CommunicationException e) {
+            LOG.error("Can't connect to ldap: "+e.getExplanation(), e);
+            throw new AuthenticationException("Can't connect to ldap server");
+
+        } catch (AuthenticationException e) {
+            LOG.error("Can't connect to ldap: "+e.getLocalizedMessage());
+            throw new AuthenticationException("Authentication failed");
+
+        } catch (NoPermissionException e) {
+            LOG.error("User must change password: " + e.getExplanation());
+            throw new UserMustChangePasswordException();
+
+        } catch (NamingException e) {
+            LOG.error("Can't read ldap principal: " + e.getExplanation());
+            throw new AuthenticationException("Authentication failed");
+        }
     }
 
     @Override
@@ -113,6 +158,9 @@ public class AuthServiceImpl implements IAuthService {
 
     private final IOneTimePasswordService theOneTimePasswordService;
     private final LdapBinder theLdapBinder;
+    private final AttributeReader theAttributeReader;
+    private final LdapAttributeNames theAttributeNames;
+    private final LongSupplier theClock;
 
     public void changePassword(String aUsername, String aCurrentPassword, String aNewPassword) throws AuthenticationException {
         try {
