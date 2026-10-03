@@ -73,17 +73,15 @@ public class OtpSecretStore {
     public static final String AMBIGUOUS = "";
 
     /**
-     * Name under which the secret of this login is stored: the exact name, else the only name that is the
-     * same login ({@link LoginNames}); {@link #AMBIGUOUS} when several match; null when there is none.
+     * Name under which the secret of this login is stored: the only stored name that is the same login
+     * ({@link LoginNames}); {@link #AMBIGUOUS} when several match, even if one is spelled exactly as typed,
+     * because LDAP binds all of them to one entry; null when there is none.
      */
     public String resolveName(String username) {
         ensureFresh();
         Map<String, String> current = secrets;
         if (username == null) {
             return null;
-        }
-        if (current.containsKey(username)) {
-            return username;
         }
         String found = null;
         for (String name : current.keySet()) {

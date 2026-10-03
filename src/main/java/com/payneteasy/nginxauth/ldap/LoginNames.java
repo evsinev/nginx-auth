@@ -4,11 +4,13 @@ import java.text.Normalizer;
 import java.util.Locale;
 
 /**
- * Comparison form of a login name, a conservative subset of LDAP caseIgnoreMatch (RFC 4518): Unicode NFKC,
- * leading and trailing spaces removed, inner whitespace runs collapsed to one space, lower case. It never
- * merges names LDAP keeps apart; a few spellings LDAP merges (e.g. ß and ss) stay different.
+ * Comparison form of a login name, close to LDAP caseIgnoreMatch (RFC 4518): Unicode NFKC, leading and
+ * trailing spaces removed, inner whitespace runs collapsed to one space, case folded as RFC 3454 B.2.
+ * Spellings that select the same bind DN compare equal; names LDAP keeps apart (ı and i) stay apart.
  */
 public final class LoginNames {
+
+    private static final int DOTLESS_I = 0x0131;
 
     private LoginNames() {
     }
@@ -32,9 +34,24 @@ public final class LoginNames {
             }
             sb.append(c);
         }
-        // plain lower case on purpose: folding through upper case would merge distinct logins (ı → I → i),
-        // and merging two accounts is worse than treating two spellings of one account as different
-        return sb.toString().toLowerCase(Locale.ROOT);
+        return fold(sb.toString());
+    }
+
+    /**
+     * Case folding per code point, matching RFC 3454 table B.2 for the cases that matter here (ß → ss,
+     * ſ → s, ς → σ, İ → i̇) without the one place where upper-then-lower diverges from it: dotless ı (U+0131)
+     * has no B.2 mapping and must stay distinct from i, otherwise two accounts would merge.
+     */
+    static String fold(String aValue) {
+        StringBuilder sb = new StringBuilder(aValue.length());
+        aValue.codePoints().forEach(cp -> {
+            if (cp == DOTLESS_I) {
+                sb.appendCodePoint(cp);
+            } else {
+                sb.append(new String(Character.toChars(cp)).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT));
+            }
+        });
+        return sb.toString();
     }
 
     public static boolean same(String aFirst, String aSecond) {

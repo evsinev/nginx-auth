@@ -96,6 +96,10 @@ public class OtpSecretStoreTest {
 
         OtpSecretStore twice = new OtpSecretStore(java.util.Map.of("Olga Smith", "S1", "olga smith", "S2"), "DUMMY");
         org.junit.Assert.assertEquals(OtpSecretStore.AMBIGUOUS, twice.resolveName("OLGA SMITH"));
+        org.junit.Assert.assertEquals(OtpSecretStore.AMBIGUOUS, twice.resolveName("Olga Smith"));
+
+        OtpSecretStore german = new OtpSecretStore(java.util.Map.of("Straße", "S1"), "DUMMY");
+        org.junit.Assert.assertEquals("Straße", german.resolveName("Strasse"));
         org.junit.Assert.assertNull(twice.getSecret(OtpSecretStore.AMBIGUOUS));
     }
 }

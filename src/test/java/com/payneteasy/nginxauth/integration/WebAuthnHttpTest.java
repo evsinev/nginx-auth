@@ -380,6 +380,14 @@ public class WebAuthnHttpTest {
                 "j_csrf", csrf, "back", "/app"));
         assertTrue(response.body.contains("Verification code is empty"));
         assertEquals("pw", server.passwords.get("Olga Smith"));
+
+        server.user("Straße", "pw");
+        server.totpUsers.put("Straße", true);
+        Browser.Response folded = attacker.postForm("/auth/change-password", form(
+                "j_username", "STRASSE", "j_password", "pw", "j_password_new_1", "pw2", "j_password_new_2", "pw2",
+                "j_csrf", attacker.get("/auth?back=%2Fapp").csrf(), "back", "/app"));
+        assertTrue(folded.body.contains("Verification code is empty"));
+        assertEquals("pw", server.passwords.get("Straße"));
     }
 
     @Test
