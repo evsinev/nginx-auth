@@ -18,8 +18,16 @@ public final class LdapPrincipal {
     private final String       displayName;
     private final List<String> groups;
     private final long         ldapAuthTime;
+    private final String       loginName;
 
     public LdapPrincipal(String canonicalUid, String displayName, List<String> groups, long ldapAuthTime) {
+        this(canonicalUid, displayName, groups, ldapAuthTime, null);
+    }
+
+    /**
+     * @param loginName the name the user typed, which selects the bind DN; null when unknown
+     */
+    public LdapPrincipal(String canonicalUid, String displayName, List<String> groups, long ldapAuthTime, String loginName) {
         if (canonicalUid == null || canonicalUid.isEmpty()) {
             throw new IllegalArgumentException("canonicalUid is empty");
         }
@@ -27,16 +35,17 @@ public final class LdapPrincipal {
         this.displayName  = displayName == null || displayName.isEmpty() ? canonicalUid : displayName;
         this.groups       = groups == null ? Collections.emptyList() : List.copyOf(groups);
         this.ldapAuthTime = ldapAuthTime;
+        this.loginName    = loginName;
     }
 
-    public static LdapPrincipal fromAttributes(Attributes aAttributes, LdapAttributeNames aNames, long aNow) throws NamingException {
+    public static LdapPrincipal fromAttributes(Attributes aAttributes, LdapAttributeNames aNames, long aNow, String aLoginName) throws NamingException {
         String uid = firstValue(aAttributes.get(aNames.uid()));
         if (uid == null || uid.isEmpty()) {
             throw new NamingException("Attribute " + aNames.uid() + " is missing");
         }
         String displayName = firstValue(aAttributes.get(aNames.displayName()));
         List<String> groups = allValues(aAttributes.get(aNames.groups()));
-        return new LdapPrincipal(uid, displayName, groups, aNow);
+        return new LdapPrincipal(uid, displayName, groups, aNow, aLoginName);
     }
 
     private static String firstValue(Attribute aAttribute) throws NamingException {
@@ -72,6 +81,10 @@ public final class LdapPrincipal {
 
     public List<String> getGroups() {
         return groups;
+    }
+
+    public String getLoginName() {
+        return loginName;
     }
 
     public long getLdapAuthTime() {

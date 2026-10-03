@@ -38,6 +38,8 @@ final class TestServer implements AutoCloseable {
     final Map<String, Boolean>      mustChange   = new ConcurrentHashMap<>();
     final Map<String, Boolean>      totpUsers    = new ConcurrentHashMap<>();
     volatile boolean                failPrincipalAfterChange;
+    /** login name → canonical uid when they differ */
+    final Map<String, String>       uids         = new ConcurrentHashMap<>();
 
     final Path            dir;
     final AppContext      app;
@@ -123,7 +125,8 @@ final class TestServer implements AutoCloseable {
             if (Boolean.TRUE.equals(mustChange.get(aUsername))) {
                 throw new UserMustChangePasswordException();
             }
-            return new LdapPrincipal(aUsername, aUsername, groups.getOrDefault(aUsername, List.of()), System.currentTimeMillis());
+            String uid = uids.getOrDefault(aUsername, aUsername);
+            return new LdapPrincipal(uid, uid, groups.getOrDefault(aUsername, List.of()), System.currentTimeMillis(), aUsername);
         }
 
         @Override

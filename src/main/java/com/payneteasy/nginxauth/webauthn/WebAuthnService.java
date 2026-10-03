@@ -95,6 +95,8 @@ public final class WebAuthnService {
     private final RelyingParties                relyingParties;
     private final LongSupplier                  clock;
     private final ConcurrentHashMap<String, Long> resetEpochs = new ConcurrentHashMap<>();
+    /** uid → time of the last password-change revocation; LDAP checks older than this publish nothing. */
+    private final ConcurrentHashMap<String, Long> revokedAt   = new ConcurrentHashMap<>();
 
     /** Test hook: runs inside lock(uid) right before a ceremony result is committed. */
     volatile Runnable beforeCommitHook = () -> { };
@@ -386,7 +388,15 @@ public final class WebAuthnService {
             if (now - aTx.ldapAuthTime() > config.getPreauthTtlMillis()) {
                 throw new WebAuthnException("preauth_expired", "Your login has expired. Please enter your password again.");
             }
+            if (isRevoked(aTx.uid(), aTx.ldapAuthTime())) {
+                throw new WebAuthnException("password_changed", "Your password was changed. Please log in again.");
+            }
         }
+    }
+
+    private boolean isRevoked(String aUid, long aLdapAuthTime) {
+        Long revoked = revokedAt.get(aUid);
+        return revoked != null && aLdapAuthTime < revoked;
     }
 
     private FinishResult commitAssertion(BrowserState aState, Transaction aTx, String aCredentialId, boolean aBe, boolean aBs,
@@ -434,8 +444,10 @@ public final class WebAuthnService {
 
         switch (aTx.purpose()) {
             case LOGIN -> {
+                // checkCommit verified under this monitor that the pre-auth is the transaction's one
+                String loginName = aState.preAuth().principal().getLoginName();
                 String token = tokens.createSession(Session.withWebAuthn(uid, aTx.displayName(), aTx.groups(), aTx.ldapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()));
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLoginName(loginName));
                 states.clearPreAuth(aState, aTx.preauthId());
                 Audit.log("authentication_succeeded", "uid", uid, "cred", Audit.cred(aCredentialId), "purpose", "login",
                         "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -443,7 +455,7 @@ public final class WebAuthnService {
             }
             case STEP_UP -> {
                 Session next = Session.withWebAuthn(uid, source.getDisplayName(), source.getGroups(), source.getLdapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding());
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLoginName(source.getLoginName());
                 String token = tokens.replaceIfActive(aTx.sourceSessionId(), next)
                         .orElseThrow(() -> new WebAuthnException("session_gone", "Your session has ended. Please log in again."));
                 Audit.log("step_up", "uid", uid, "cred", Audit.cred(aCredentialId), "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -597,34 +609,48 @@ public final class WebAuthnService {
      * after the request started.
      */
     public Optional<String> issueSession(BrowserState aState, long aGeneration, Session aSession) {
-        synchronized (aState) {
-            if (aState.generation() != aGeneration) {
-                return Optional.empty();
+        return repository.locks().withLock(aSession.getCanonicalUid(), () -> {
+            synchronized (aState) {
+                if (aState.generation() != aGeneration || isRevoked(aSession.getCanonicalUid(), aSession.getLdapAuthTime())) {
+                    return Optional.<String>empty();
+                }
+                states.clearPreAuth(aState, null);
+                transactions.cancelForBinding(aState.binding());
+                return Optional.of(tokens.createSession(aSession.boundTo(aState.binding())));
             }
-            states.clearPreAuth(aState, null);
-            transactions.cancelForBinding(aState.binding());
-            return Optional.of(tokens.createSession(aSession.boundTo(aState.binding())));
-        }
+        });
     }
 
     /** Starts the second step after the password unless this browser logged out after the request started. */
     public boolean beginPreAuth(BrowserState aState, long aGeneration, PreAuth aPreAuth) {
-        synchronized (aState) {
-            if (aState.generation() != aGeneration) {
-                return false;
+        return repository.locks().withLock(aPreAuth.uid(), () -> {
+            synchronized (aState) {
+                if (aState.generation() != aGeneration || isRevoked(aPreAuth.uid(), aPreAuth.ldapAuthTime())) {
+                    return false;
+                }
+                transactions.cancelForBinding(aState.binding());
+                states.setPreAuth(aState, aPreAuth);
+                return true;
             }
-            transactions.cancelForBinding(aState.binding());
-            states.setPreAuth(aState, aPreAuth);
-            return true;
-        }
+        });
     }
 
-    /** Revokes every session of the user, e.g. after a password change. */
-    public void revokeSessions(String aUid) {
-        repository.locks().withLock(aUid, () -> {
-            tokens.invalidateUser(aUid);
-            return null;
-        });
+    /**
+     * After a password change: revokes every session of the directory entry (by canonical uid when known and
+     * by the login name that selected the bind DN), pending pre-authentications and transactions, and makes
+     * every LDAP check done before now unable to publish a session.
+     */
+    public void revokeAfterPasswordChange(String aUid, String aLoginName) {
+        if (aUid != null) {
+            repository.locks().withLock(aUid, () -> {
+                revokedAt.merge(aUid, clock.getAsLong(), Math::max);
+                tokens.invalidateUser(aUid);
+                transactions.cancelForUser(aUid);
+                return null;
+            });
+            states.clearPreAuthForUser(aUid);
+        }
+        tokens.invalidateByLoginName(aLoginName);
         Audit.log("sessions_revoked", "uid", aUid, "reason", "password_changed");
     }
 

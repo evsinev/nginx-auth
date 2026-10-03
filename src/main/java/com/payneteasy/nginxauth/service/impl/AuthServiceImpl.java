@@ -59,7 +59,7 @@ public class AuthServiceImpl implements IAuthService {
             InitialLdapContext context = createInitialLdapContext(aUsername, aPassword);
             try {
                 Attributes attributes = theAttributeReader.read(context, buildUserDn(aUsername), names.asArray());
-                return LdapPrincipal.fromAttributes(attributes, names, theClock.getAsLong());
+                return LdapPrincipal.fromAttributes(attributes, names, theClock.getAsLong(), aUsername);
             } finally {
                 context.close();
             }

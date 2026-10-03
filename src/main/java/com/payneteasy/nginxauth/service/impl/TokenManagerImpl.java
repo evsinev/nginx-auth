@@ -38,7 +38,8 @@ public class TokenManagerImpl implements ITokenManager {
 
     @Override
     public String createToken(String username) {
-        return createSession(Session.withoutWebAuthn(username, username, Collections.emptyList(), AuthenticationMethod.LDAP_ONLY, clock.getAsLong()));
+        return createSession(Session.withoutWebAuthn(username, username, Collections.emptyList(), AuthenticationMethod.LDAP_ONLY, clock.getAsLong())
+                .withLoginName(username));
     }
 
     @Override
@@ -119,6 +120,14 @@ public class TokenManagerImpl implements ITokenManager {
             return;
         }
         removeIf(session -> aBrowserBinding.equals(session.getBrowserBinding()));
+    }
+
+    @Override
+    public void invalidateByLoginName(String aLoginName) {
+        if (aLoginName == null) {
+            return;
+        }
+        removeIf(session -> aLoginName.equalsIgnoreCase(session.getLoginName()));
     }
 
     int size() {

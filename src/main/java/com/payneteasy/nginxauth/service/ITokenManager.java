@@ -30,4 +30,7 @@ public interface ITokenManager {
 
     void invalidateByBrowserBinding(String aBrowserBinding);
 
+    /** Login names select the bind DN and compare case-insensitively, like LDAP attribute values. */
+    void invalidateByLoginName(String aLoginName);
+
 }

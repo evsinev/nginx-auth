@@ -159,21 +159,17 @@ final class WebAuthnLoginFlow {
                     return;
                 }
                 LOG.warn("User {} changed password", username);
-                // a token stolen before the change must not outlive it, even if the next step fails
-                if (knownUid != null) {
-                    webauthn.service().revokeSessions(knownUid);
-                }
+                // a token stolen before the change must not outlive it, even if the next step fails; the login
+                // name selects the bind DN, so it identifies the entry even when the uid is not readable yet
+                webauthn.service().revokeAfterPasswordChange(knownUid, username);
                 try {
                     principal = app.authService().authenticatePrincipal(username, newPassword);
                 } catch (AuthenticationException | UserMustChangePasswordException e) {
-                    if (knownUid == null && FileCredentialRepository.isValidUid(username)) {
-                        webauthn.service().revokeSessions(username);
-                    }
                     web.loginForm(aResponse, state, back, contextId, username, "Password changed. Please log in with the new password.");
                     return;
                 }
                 if (!principal.getCanonicalUid().equals(knownUid)) {
-                    webauthn.service().revokeSessions(principal.getCanonicalUid());
+                    webauthn.service().revokeAfterPasswordChange(principal.getCanonicalUid(), username);
                 }
             } else {
                 principal = app.authService().authenticatePrincipal(username, password);
@@ -238,7 +234,7 @@ final class WebAuthnLoginFlow {
             case WEBAUTHN, RECOVERY -> {
                 attempt.succeeded();
                 if (!webauthn.service().beginPreAuth(state, generation, PreAuth.create(principal, policyId, back))) {
-                    web.loginForm(aResponse, state, back, contextId, null, "You have logged out. Please log in again.");
+                    web.loginForm(aResponse, state, back, contextId, null, "Your login was interrupted. Please log in again.");
                     return;
                 }
                 LOG.info("User {} passed LDAP, second factor {}", uid, method);
@@ -251,9 +247,9 @@ final class WebAuthnLoginFlow {
     private void issue(HttpServletRequest aRequest, HttpServletResponse aResponse, BrowserState aState, long aGeneration,
                        LdapPrincipal aPrincipal, AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
         Optional<String> issued = webauthn.service().issueSession(aState, aGeneration, Session.withoutWebAuthn(aPrincipal.getCanonicalUid(),
-                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()));
+                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).withLoginName(aPrincipal.getLoginName()));
         if (issued.isEmpty()) {
-            web.loginForm(aResponse, aState, aBack, null, null, "You have logged out. Please log in again.");
+            web.loginForm(aResponse, aState, aBack, null, null, "Your login was interrupted. Please log in again.");
             return;
         }
         String token = issued.get();

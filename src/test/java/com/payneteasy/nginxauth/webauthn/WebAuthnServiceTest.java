@@ -406,6 +406,29 @@ public class WebAuthnServiceTest {
     }
 
     @Test
+    public void preAuthFromOldPasswordCannotFinishAfterPasswordChange() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.now.addAndGet(1_000L);
+        f.service.revokeAfterPasswordChange("alice", "alice");
+        expectFailure("unknown_transaction", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
+        assertNull(state.preAuth());
+
+        // an LDAP check done before the change cannot publish even if it raced the revocation
+        BrowserState racing = f.browser();
+        PreAuth old = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get() - 500L), "none", "/");
+        assertFalse(f.service.beginPreAuth(racing, racing.generation(), old));
+        Session oldSession = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() - 500L);
+        assertFalse(f.service.issueSession(racing, racing.generation(), oldSession).isPresent());
+        Session fresh = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 1L);
+        assertTrue(f.service.issueSession(racing, racing.generation(), fresh).isPresent());
+    }
+
+    @Test
     public void requestStartedBeforeLogoutPublishesNothing() throws Exception {
         f = new WebAuthnFixture();
         BrowserState state = f.browser();

@@ -347,6 +347,28 @@ public class WebAuthnHttpTest {
     }
 
     @Test
+    public void forcedPasswordChangeRevokesByLoginNameWhenUidIsUnreadable() throws Exception {
+        start(null, true);
+        server.user("Olga Smith", "pw");
+        server.uids.put("Olga Smith", "osmith");
+        server.totpUsers.put("Olga Smith", true);
+        Browser stolen = browser();
+        assertEquals(302, login(stolen, "back=%2Fapp", "Olga Smith", "pw", TestServer.TOTP_CODE).status);
+        assertEquals("osmith", session(stolen).getCanonicalUid());
+
+        // expired password: uid not readable before the change, re-reading it fails after the change
+        server.mustChange.put("Olga Smith", true);
+        server.failPrincipalAfterChange = true;
+        Browser owner = browser();
+        String csrf = owner.get("/auth?back=%2Fapp").csrf();
+        Browser.Response changed = owner.postForm("/auth/change-password", form(
+                "j_username", "Olga Smith", "j_password", "pw", "j_password_new_1", "pw2", "j_password_new_2", "pw2",
+                "j_code", TestServer.TOTP_CODE, "j_csrf", csrf, "back", "/app"));
+        assertTrue(changed.body.contains("Password changed"));
+        assertEquals(401, authRequest(stolen, null, "/app").status);
+    }
+
+    @Test
     public void recoveryOverHttp() throws Exception {
         start(STRICT_POLICY, false);
         server.user("hank", "pw", "cn=admins,ou=groups,dc=example,dc=com");
