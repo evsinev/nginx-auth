@@ -130,6 +130,7 @@ final class WebAuthnLoginFlow {
 
         // read before any bind: a password change after this point makes this request unable to publish
         long loginGeneration = webauthn.service().loginGeneration(username);
+        long loginSequence = webauthn.service().nextLoginSequence();
         LdapPrincipal principal;
         boolean totpVerified = false;
         try {
@@ -169,6 +170,7 @@ final class WebAuthnLoginFlow {
                 // a token stolen before the change must not outlive it, even if the next step fails; the login
                 // name selects the bind DN, so it identifies the entry even when the uid is not readable yet
                 loginGeneration = webauthn.service().revokeAfterPasswordChange(knownUid, username);
+                loginSequence = webauthn.service().nextLoginSequence();
                 try {
                     principal = app.authService().authenticatePrincipal(username, newPassword);
                 } catch (AuthenticationException | UserMustChangePasswordException e) {
@@ -177,7 +179,8 @@ final class WebAuthnLoginFlow {
                 }
                 if (!principal.getCanonicalUid().equals(knownUid)) {
                     // the uid was not readable before the change: end what other spellings of the login published
-                    webauthn.service().revokeUserAfterPasswordChange(principal.getCanonicalUid(), username, loginGeneration);
+                    webauthn.service().revokeUserAfterPasswordChange(principal.getCanonicalUid());
+                    loginSequence = webauthn.service().nextLoginSequence();
                 }
 
             } else {
@@ -229,11 +232,11 @@ final class WebAuthnLoginFlow {
                     return;
                 }
                 attempt.succeeded();
-                issue(aRequest, aResponse, state, generation, loginGeneration, principal, AuthenticationMethod.LDAP_TOTP, back, policyId);
+                issue(aRequest, aResponse, state, generation, loginGeneration, loginSequence, principal, AuthenticationMethod.LDAP_TOTP, back, policyId);
             }
             case LDAP_ONLY -> {
                 attempt.succeeded();
-                issue(aRequest, aResponse, state, generation, loginGeneration, principal, AuthenticationMethod.LDAP_ONLY, back, policyId);
+                issue(aRequest, aResponse, state, generation, loginGeneration, loginSequence, principal, AuthenticationMethod.LDAP_ONLY, back, policyId);
             }
             case CODE_REQUIRED -> {
                 attempt.succeeded();
@@ -242,7 +245,7 @@ final class WebAuthnLoginFlow {
             }
             case WEBAUTHN, RECOVERY -> {
                 attempt.succeeded();
-                if (!webauthn.service().beginPreAuth(state, generation, PreAuth.create(principal, policyId, back, loginGeneration))) {
+                if (!webauthn.service().beginPreAuth(state, generation, PreAuth.create(principal, policyId, back, loginGeneration, loginSequence))) {
                     web.loginForm(aResponse, state, back, contextId, null, "Your login was interrupted. Please log in again.");
                     return;
                 }
@@ -254,9 +257,9 @@ final class WebAuthnLoginFlow {
     }
 
     private void issue(HttpServletRequest aRequest, HttpServletResponse aResponse, BrowserState aState, long aGeneration,
-                       long aLoginGeneration, LdapPrincipal aPrincipal, AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
+                       long aLoginGeneration, long aLoginSequence, LdapPrincipal aPrincipal, AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
         Optional<String> issued = webauthn.service().issueSession(aState, aGeneration, Session.withoutWebAuthn(aPrincipal.getCanonicalUid(),
-                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).withLogin(aPrincipal.getLoginName(), aLoginGeneration));
+                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).withLogin(aPrincipal.getLoginName(), aLoginGeneration, aLoginSequence));
         if (issued.isEmpty()) {
             web.loginForm(aResponse, aState, aBack, null, null, "Your login was interrupted. Please log in again.");
             return;

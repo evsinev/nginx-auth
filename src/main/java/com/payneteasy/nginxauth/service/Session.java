@@ -20,10 +20,11 @@ public final class Session {
     private final String               browserBinding;
     private final String               loginName;
     private final long                 loginGeneration;
+    private final long                 loginSequence;
 
     private Session(String canonicalUid, String displayName, List<String> groups, AuthenticationMethod method,
                     long ldapAuthTime, long webauthnAuthTime, String credentialId, boolean userVerified, boolean backupEligible,
-                    String browserBinding, String loginName, long loginGeneration) {
+                    String browserBinding, String loginName, long loginGeneration, long loginSequence) {
         this.canonicalUid     = canonicalUid;
         this.displayName      = displayName;
         this.groups           = groups == null ? Collections.emptyList() : List.copyOf(groups);
@@ -36,13 +37,14 @@ public final class Session {
         this.browserBinding   = browserBinding;
         this.loginName        = loginName;
         this.loginGeneration  = loginGeneration;
+        this.loginSequence    = loginSequence;
     }
 
     public static Session withoutWebAuthn(String uid, String displayName, List<String> groups, AuthenticationMethod method, long ldapAuthTime) {
         if (method == AuthenticationMethod.LDAP_WEBAUTHN) {
             throw new IllegalArgumentException("Use withWebAuthn for LDAP_WEBAUTHN sessions");
         }
-        return new Session(uid, displayName, groups, method, ldapAuthTime, 0L, null, false, false, null, null, 0L);
+        return new Session(uid, displayName, groups, method, ldapAuthTime, 0L, null, false, false, null, null, 0L, 0L);
     }
 
     public static Session withWebAuthn(String uid, String displayName, List<String> groups, long ldapAuthTime,
@@ -51,7 +53,7 @@ public final class Session {
             throw new IllegalArgumentException("credentialId is required");
         }
         return new Session(uid, displayName, groups, AuthenticationMethod.LDAP_WEBAUTHN, ldapAuthTime, webauthnAuthTime,
-                credentialId, userVerified, backupEligible, null, null, 0L);
+                credentialId, userVerified, backupEligible, null, null, 0L, 0L);
     }
 
     public String getCanonicalUid() {
@@ -97,7 +99,7 @@ public final class Session {
 
     public Session boundTo(String aBrowserBinding) {
         return new Session(canonicalUid, displayName, groups, method, ldapAuthTime, webauthnAuthTime, credentialId,
-                userVerified, backupEligible, aBrowserBinding, loginName, loginGeneration);
+                userVerified, backupEligible, aBrowserBinding, loginName, loginGeneration, loginSequence);
     }
 
     /** The typed login that selected the bind DN; lets a password change revoke sessions of that entry. */
@@ -110,8 +112,17 @@ public final class Session {
         return loginGeneration;
     }
 
+    /** Login sequence number taken before the LDAP bind; compared with the uid's last password change. */
+    public long getLoginSequence() {
+        return loginSequence;
+    }
+
     public Session withLogin(String aLoginName, long aLoginGeneration) {
+        return withLogin(aLoginName, aLoginGeneration, loginSequence);
+    }
+
+    public Session withLogin(String aLoginName, long aLoginGeneration, long aLoginSequence) {
         return new Session(canonicalUid, displayName, groups, method, ldapAuthTime, webauthnAuthTime, credentialId,
-                userVerified, backupEligible, browserBinding, aLoginName, aLoginGeneration);
+                userVerified, backupEligible, browserBinding, aLoginName, aLoginGeneration, aLoginSequence);
     }
 }

@@ -3,7 +3,6 @@ package com.payneteasy.nginxauth.webauthn;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.policy.AccessChecker;
 import com.payneteasy.nginxauth.policy.EffectivePolicy;
 import com.payneteasy.nginxauth.policy.PolicyResolver;
@@ -97,6 +96,14 @@ public final class WebAuthnService {
     private final LongSupplier                  clock;
     private final ConcurrentHashMap<String, Long> resetEpochs = new ConcurrentHashMap<>();
     private final LoginRevocations                loginRevocations = new LoginRevocations();
+    /**
+     * Password-change revocation by directory identity: every login request takes a number before its bind;
+     * a password change records a newer number for the uid under lock(uid). Publication, also under lock(uid),
+     * needs a request number above it. Unlike the login-name generation this does not depend on how the name
+     * was spelled.
+     */
+    private final java.util.concurrent.atomic.AtomicLong loginSequence = new java.util.concurrent.atomic.AtomicLong();
+    private final ConcurrentHashMap<String, Long>  uidRevokedAt     = new ConcurrentHashMap<>();
 
     /** Test hook: runs inside lock(uid) right before a ceremony result is committed. */
     volatile Runnable beforeCommitHook = () -> { };
@@ -388,7 +395,7 @@ public final class WebAuthnService {
             if (now - aTx.ldapAuthTime() > config.getPreauthTtlMillis()) {
                 throw new WebAuthnException("preauth_expired", "Your login has expired. Please enter your password again.");
             }
-            if (loginRevocations.current(pre.loginName()) != pre.loginGeneration()) {
+            if (loginRevocations.current(pre.loginName()) != pre.loginGeneration() || !uidAllows(aTx.uid(), pre.loginSequence())) {
                 throw new WebAuthnException("password_changed", "Your password was changed. Please log in again.");
             }
         }
@@ -425,15 +432,18 @@ public final class WebAuthnService {
         Session source = null;
         String loginName;
         long loginGeneration;
+        long loginSeq;
         if (aTx.purpose().isPreSession()) {
             // checkCommit verified under this monitor that the pre-auth is the transaction's one
             PreAuth pre = aState.preAuth();
             loginName = pre.loginName();
             loginGeneration = pre.loginGeneration();
+            loginSeq = pre.loginSequence();
         } else {
             source = sourceSession(aTx, record);
             loginName = source.getLoginName();
             loginGeneration = source.getLoginGeneration();
+            loginSeq = source.getLoginSequence();
         }
 
         UserRecord updated = record.withCredential(stored.afterUse(newCount, aBs, now));
@@ -453,8 +463,11 @@ public final class WebAuthnService {
             if (sourceSession != null) {
                 sourceSession(aTx, record);
             }
+            if (!uidAllows(uid, loginSeq)) {
+                return null;
+            }
             save(toSave);
-            return publishAssertion(aState, aTx, aCredentialId, aUv, stored, sourceSession, loginName, loginGeneration, now);
+            return publishAssertion(aState, aTx, aCredentialId, aUv, stored, sourceSession, loginName, loginGeneration, loginSeq, now);
         });
         if (result == null) {
             throw new WebAuthnException("password_changed", "Your password was changed. Please log in again.");
@@ -463,12 +476,12 @@ public final class WebAuthnService {
     }
 
     private FinishResult publishAssertion(BrowserState aState, Transaction aTx, String aCredentialId, boolean aUv, StoredCredential stored,
-                                          Session source, String aLoginName, long aLoginGeneration, long now) throws WebAuthnException {
+                                          Session source, String aLoginName, long aLoginGeneration, long aLoginSeq, long now) throws WebAuthnException {
         String uid = aTx.uid();
         switch (aTx.purpose()) {
             case LOGIN -> {
                 String token = tokens.createSession(Session.withWebAuthn(uid, aTx.displayName(), aTx.groups(), aTx.ldapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLogin(aLoginName, aLoginGeneration));
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLogin(aLoginName, aLoginGeneration, aLoginSeq));
                 states.clearPreAuth(aState, aTx.preauthId());
                 Audit.log("authentication_succeeded", "uid", uid, "cred", Audit.cred(aCredentialId), "purpose", "login",
                         "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -476,7 +489,7 @@ public final class WebAuthnService {
             }
             case STEP_UP -> {
                 Session next = Session.withWebAuthn(uid, source.getDisplayName(), source.getGroups(), source.getLdapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLogin(aLoginName, aLoginGeneration);
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLogin(aLoginName, aLoginGeneration, aLoginSeq);
                 String token = tokens.replaceIfActive(aTx.sourceSessionId(), next)
                         .orElseThrow(() -> new WebAuthnException("session_gone", "Your session has ended. Please log in again."));
                 Audit.log("step_up", "uid", uid, "cred", Audit.cred(aCredentialId), "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -566,6 +579,7 @@ public final class WebAuthnService {
             UserRecord updated = record;
             String loginName;
             long loginGeneration;
+            long loginSeq;
             if (aTx.purpose() == Purpose.RECOVERY_ENROLL) {
                 PreAuth pre = aState.preAuth();
                 if (pre == null || !aTx.grantId().equals(pre.recoveryGrantId())) {
@@ -579,16 +593,21 @@ public final class WebAuthnService {
                 updated = updated.withGrant(used.usesLeft() > 0 ? used : null);
                 loginName = pre.loginName();
                 loginGeneration = pre.loginGeneration();
+                loginSeq = pre.loginSequence();
             } else {
                 Session source = sourceSession(aTx, record);
                 loginName = source.getLoginName();
                 loginGeneration = source.getLoginGeneration();
+                loginSeq = source.getLoginSequence();
             }
             UserRecord toSave = updated.withCredential(stored);
             // the write is one step with the password-change check, like a session publication
             Boolean saved = loginRevocations.publishIf(loginName, loginGeneration, () -> {
                 if (aTx.purpose() != Purpose.RECOVERY_ENROLL) {
                     sourceSession(aTx, record);
+                }
+                if (!uidAllows(aTx.uid(), loginSeq)) {
+                    return null;
                 }
                 save(toSave);
                 if (aTx.purpose() == Purpose.RECOVERY_ENROLL) {
@@ -650,7 +669,7 @@ public final class WebAuthnService {
     public Optional<String> issueSession(BrowserState aState, long aGeneration, Session aSession) {
         return repository.locks().withLock(aSession.getCanonicalUid(), () -> {
             synchronized (aState) {
-                if (aState.generation() != aGeneration) {
+                if (aState.generation() != aGeneration || !uidAllows(aSession.getCanonicalUid(), aSession.getLoginSequence())) {
                     return Optional.<String>empty();
                 }
                 return Optional.ofNullable(loginRevocations.publishIf(aSession.getLoginName(), aSession.getLoginGeneration(), () -> {
@@ -664,20 +683,34 @@ public final class WebAuthnService {
 
     /**
      * Second step of a password change, once the uid is readable (expired password: it was not before the
-     * change). Ends every session, pre-auth and transaction of the uid, except those this login name published
-     * with the new generation, i.e. logins with the new password. No new bump, so those logins stay valid.
+     * change). Ends every session, pre-auth and transaction of the uid, whatever spelling of the login created
+     * them, and refuses publication for every login request numbered before now. The request that changed the
+     * password takes a new number after this call.
      */
-    public void revokeUserAfterPasswordChange(String aUid, String aLoginName, long aGeneration) {
-        java.util.function.Predicate<String> sameLogin = login -> LoginNames.same(aLoginName, login);
+    public void revokeUserAfterPasswordChange(String aUid) {
         repository.locks().withLock(aUid, () -> {
-            tokens.invalidateMatching(session -> aUid.equals(session.getCanonicalUid())
-                    && !(sameLogin.test(session.getLoginName()) && session.getLoginGeneration() == aGeneration));
+            markUidRevoked(aUid);
+            tokens.invalidateUser(aUid);
             transactions.cancelForUser(aUid);
             return null;
         });
-        states.clearPreAuthIf(pre -> aUid.equals(pre.uid())
-                && !(sameLogin.test(pre.loginName()) && pre.loginGeneration() == aGeneration));
+        states.clearPreAuthForUser(aUid);
         Audit.log("sessions_revoked", "uid", aUid, "reason", "password_changed");
+    }
+
+    /** Taken before the LDAP bind of a login request. */
+    public long nextLoginSequence() {
+        return loginSequence.incrementAndGet();
+    }
+
+    /** Must be called under lock(uid). */
+    private void markUidRevoked(String aUid) {
+        uidRevokedAt.put(aUid, loginSequence.incrementAndGet());
+    }
+
+    private boolean uidAllows(String aUid, long aLoginSequence) {
+        Long revoked = uidRevokedAt.get(aUid);
+        return revoked == null || aLoginSequence > revoked;
     }
 
     /** Read before the LDAP bind of a login request. */
@@ -689,7 +722,7 @@ public final class WebAuthnService {
     public boolean beginPreAuth(BrowserState aState, long aGeneration, PreAuth aPreAuth) {
         return repository.locks().withLock(aPreAuth.uid(), () -> {
             synchronized (aState) {
-                if (aState.generation() != aGeneration) {
+                if (aState.generation() != aGeneration || !uidAllows(aPreAuth.uid(), aPreAuth.loginSequence())) {
                     return false;
                 }
                 return Boolean.TRUE.equals(loginRevocations.publishIf(aPreAuth.loginName(), aPreAuth.loginGeneration(), () -> {
@@ -714,6 +747,7 @@ public final class WebAuthnService {
         states.clearPreAuthForLogin(aLoginName);
         if (aUid != null) {
             repository.locks().withLock(aUid, () -> {
+                markUidRevoked(aUid);
                 tokens.invalidateUser(aUid);
                 transactions.cancelForUser(aUid);
                 return null;
@@ -916,6 +950,9 @@ public final class WebAuthnService {
 
     /** False once the password of the session's login changed (even before the sessions are swept). */
     public boolean isCurrent(Session aSession) {
+        if (!uidAllows(aSession.getCanonicalUid(), aSession.getLoginSequence())) {
+            return false;
+        }
         return aSession.getLoginName() == null || loginRevocations.current(aSession.getLoginName()) == aSession.getLoginGeneration();
     }
 

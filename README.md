@@ -290,7 +290,8 @@ logged.
   the account (identified by the directory after the old-password bind) already has security keys. A user
   with keys and an *expired* password cannot be identified before the change and still needs the code (or an
   administrator). After the change no session is issued without the second factor the policy requires, and
-  all existing sessions of the account are revoked.
+  all existing sessions of the account are revoked. A login of the same account that was in progress during
+  the change (even with the new password) is refused and has to be repeated.
 - TOTP secrets in `OTP_SECRETS_FILE` are looked up by the exact typed username. As specified, the second factor is asked after the change, so someone
   who knows the password of a WebAuthn-only user can change it (like any LDAP client could) and lock the user
   out; they still get no session.

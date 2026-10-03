@@ -428,7 +428,8 @@ public class WebAuthnServiceTest {
         assertFalse(f.service.beginPreAuth(racing, racing.generation(), PreAuth.create(principal, "none", "/", before)));
         Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 10_000L);
         assertFalse(f.service.issueSession(racing, racing.generation(), session.withLogin("alice", before)).isPresent());
-        assertTrue(f.service.issueSession(racing, racing.generation(), session.withLogin("alice", f.service.loginGeneration("alice"))).isPresent());
+        assertTrue(f.service.issueSession(racing, racing.generation(),
+                session.withLogin("alice", f.service.loginGeneration("alice"), f.service.nextLoginSequence())).isPresent());
     }
 
     @Test
@@ -514,19 +515,38 @@ public class WebAuthnServiceTest {
     }
 
     @Test
-    public void uidCleanupKeepsLoginsWithTheNewPassword() throws Exception {
+    public void uidCleanupEndsEverySpellingAndLetsTheChangerContinue() throws Exception {
         f = new WebAuthnFixture();
+        long before = f.service.nextLoginSequence();
         String stolen = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
-                .withLogin("osmith", 0L));
+                .withLogin("osmith", 0L, before));
         long generation = f.service.revokeAfterPasswordChange(null, "Olga Smith");
-        String fresh = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
-                .withLogin("olga smith", generation));
         assertTrue(f.tokens.peekSession(stolen).isPresent());
-        f.service.revokeUserAfterPasswordChange("osmith", "Olga Smith", generation);
+        f.service.revokeUserAfterPasswordChange("osmith");
         assertFalse(f.tokens.peekSession(stolen).isPresent());
-        assertTrue(f.tokens.peekSession(fresh).isPresent());
-        // and no new bump: the fresh session is still current
-        assertTrue(f.service.isCurrent(f.tokens.peekSession(fresh).orElseThrow()));
+        // the changing request takes a new number after the revocation and may publish
+        Session own = Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("Olga Smith", generation, f.service.nextLoginSequence());
+        BrowserState state = f.browser();
+        assertTrue(f.service.issueSession(state, state.generation(), own).isPresent());
+    }
+
+    @Test
+    public void exoticSpellingStartedBeforeChangeCannotPublish() throws Exception {
+        f = new WebAuthnFixture();
+        // login as "ℂlice" read its sequence and generation before the bind
+        long sequence = f.service.nextLoginSequence();
+        long generation = f.service.loginGeneration("\u2102lice");
+        // password change of the same entry typed as "Clice", uid known
+        f.service.revokeAfterPasswordChange("clice", "Clice");
+        Session late = Session.withoutWebAuthn("clice", "Clice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("\u2102lice", generation, sequence);
+        BrowserState state = f.browser();
+        assertFalse(f.service.issueSession(state, state.generation(), late).isPresent());
+        assertFalse(f.service.isCurrent(late));
+        PreAuth pre = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("clice", "Clice", List.of(), f.now.get(), "\u2102lice"),
+                "none", "/", generation, sequence);
+        assertFalse(f.service.beginPreAuth(state, state.generation(), pre));
     }
 
     @Test
