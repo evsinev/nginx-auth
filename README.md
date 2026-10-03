@@ -31,6 +31,7 @@ This service provides a secure way to protect your nginx-hosted web applications
 - Web server implementation using Jetty
 - Support for password change functionality
 - OTP
+- WebAuthn (security keys, passkeys) as a phishing-resistant second factor, with per-group and per-location policy
 
 
 ## Nginx Configuration Examples
@@ -127,6 +128,169 @@ limit_req_zone $binary_remote_addr zone=auth_login:10m rate=5r/m;
 location = /auth/login { limit_req zone=auth_login burst=5 nodelay; proxy_pass http://127.0.0.1:9091; }
 ```
 
+## WebAuthn second factor
+
+With `WEBAUTHN_ENABLED=true` the LDAP password stays the first factor and a WebAuthn assertion becomes the
+second one:
+
+```text
+LDAP username + password → WebAuthn assertion → AUTH_TOKEN
+```
+
+A session records how it was created:
+
+| authenticationMethod | How                                                     |
+|----------------------|---------------------------------------------------------|
+| `LDAP_ONLY`          | password only (`OTP_ENABLED=false`, no WebAuthn needed) |
+| `LDAP_TOTP`          | password + TOTP code                                    |
+| `LDAP_WEBAUTHN`      | password + security key / passkey                       |
+
+After the password the second factor is chosen like this:
+
+1. the policy requires WebAuthn → security key; without a usable key only an enrollment secret helps (see Recovery);
+2. a TOTP code was entered (and the policy allows TOTP) → `LDAP_TOTP`;
+3. the user has a security key → WebAuthn;
+4. `OTP_ENABLED=true` → "Verification code is empty";
+5. otherwise `LDAP_ONLY`.
+
+A failed WebAuthn attempt never falls back to TOTP. Users register keys at `/auth/credentials` after logging
+in. The first key can be registered from any session (bootstrap) unless the user's group requires WebAuthn;
+adding another key or removing one requires confirming with an existing key.
+
+Keys are created with `residentKey=required` and `userVerification=required` (ready for passwordless login
+later). Hardware keys therefore ask for a PIN and use one discoverable-credential slot (YubiKey 5: 25–100
+slots). Tell hardware key users in advance.
+
+`WEBAUTHN_ENABLED=false` (default) keeps the previous behaviour.
+
+### RP ID and origins
+
+```text
+WEBAUTHN_RP_ID           = example.com
+WEBAUTHN_ALLOWED_ORIGINS = https://app1.example.com,https://app2.example.com
+```
+
+The login page is served on the same host as the protected application. One nginx-auth instance may serve
+several hosts; with a parent domain as RP ID a key registered on `app1` works on `app2`. Every origin must be
+the RP ID or its subdomain. The origin of a request is found by its `Host` header in this list, so nginx must
+pass the external host: `proxy_set_header Host $host:$server_port;`. Every browser POST must carry an `Origin`
+header equal to that origin.
+
+### nginx with login context and policy id
+
+`auth_request` passes the policy id of the protected location. When access is denied, nginx-auth answers 401
+with `X-Login-Context`; nginx carries it to the login page, so the policy and the return URL come from the
+server, not from the URL.
+
+```nginx
+location /admin {
+    auth_request      /nginx-auth-request-check;
+    auth_request_set  $login_ctx $upstream_http_x_login_context;
+    error_page        401 = @login;
+    proxy_pass        http://backend;
+}
+
+location = /nginx-auth-request-check {
+    internal;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host           $host:$server_port;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Policy-Id    "admin";   # overwrites any client value
+    proxy_pass http://127.0.0.1:9091/auth/nginx-auth-request-check;
+}
+
+location @login {
+    return 302 /auth?ctx=$login_ctx;
+}
+
+location /auth {
+    proxy_set_header Host        $host:$server_port;
+    proxy_set_header X-Real-IP   $remote_addr;
+    proxy_set_header X-Policy-Id "";             # the login page carries no policy
+    proxy_pass http://127.0.0.1:9091;
+}
+```
+
+nginx **must** overwrite `X-Policy-Id`. When the policy file has a `locations` section, a missing or unknown
+policy id in `auth_request` is answered with 403 (configuration error), never with a fallback. `none` is a
+built-in id for "group policy only". The session is checked against the policy on every request, so a valid
+`AUTH_TOKEN` is not enough by itself: an `LDAP_TOTP` session in a location that requires WebAuthn gets 401 and
+the login page asks for the security key only (step-up, no password; a new `AUTH_TOKEN` replaces the old one).
+
+### Policy file
+
+`WEBAUTHN_POLICY_FILE`, JSON. Unknown keys are an error.
+
+```json
+{
+  "version": 1,
+  "groups": {
+    "cn=admins,ou=groups,dc=example,dc=com": { "requireWebAuthn": true },
+    "ops": { "requireSingleDeviceCredential": true,
+             "allowedAaguids": ["cb69481e-8ff7-4039-93ec-0a2729a154a8"] }
+  },
+  "locations": {
+    "admin": { "requireWebAuthn": true, "maxAuthAge": 900 }
+  }
+}
+```
+
+Group keys match a `memberOf` value as a full DN (case-insensitive) or as its leftmost `cn`. Nested groups are
+not resolved; group changes apply at the next full login.
+
+| Parameter                       | Meaning                                             | Combination of matching rules |
+|---------------------------------|-----------------------------------------------------|-------------------------------|
+| `requireWebAuthn`               | TOTP / password-only sessions are not accepted      | OR                            |
+| `requireSingleDeviceCredential` | only keys with `BE=0` (not synced)                  | OR                            |
+| `allowedAaguids`                | only keys whose declared AAGUID is listed           | intersection; empty → deny    |
+| `maxAuthAge`                    | seconds since the last WebAuthn check, else step-up | minimum                       |
+
+The last three imply `requireWebAuthn`. `allowedAaguids` filters the AAGUID the authenticator declares; without
+attestation verification (not implemented) it is not proof of the key model.
+
+### Recovery and admin CLI
+
+A user whose policy requires WebAuthn and who has no usable key can only enroll with an enrollment secret
+issued by an administrator after verifying the person over a separate trusted channel. Flow: password →
+enrollment secret → register a new key → log in with it. The grant is used up when the key is saved.
+
+The admin API listens on `127.0.0.1:WEBAUTHN_ADMIN_PORT` (separate connector, not reachable through the main
+port) and requires `WEBAUTHN_ADMIN_TOKEN` (at least 32 characters; `API_CHECK_TOKENS` are not accepted).
+
+```bash
+export WEBAUTHN_ADMIN_TOKEN=...
+java -jar nginx-auth.jar admin show  alice
+java -jar nginx-auth.jar admin grant alice --ttl-hours 24 --uses 1
+java -jar nginx-auth.jar admin reset alice --grant
+```
+
+`reset` deletes all keys (the user handle is kept), revokes the old grant, ends all sessions and pending logins
+of the user and optionally issues a new grant. The secret is printed once and never stored or logged.
+
+### Storage
+
+`<WEBAUTHN_STORAGE_DIR>/<uid>.json`, one file per user, written atomically (temp → fsync → rename → fsync of
+the directory). The directory must be `0700` and files `0600`; symlinks, malformed files and duplicate
+credential IDs stop the service at startup. Only one nginx-auth process may use a directory. Sessions,
+pending logins and login contexts are in memory and are lost on restart.
+
+### Audit
+
+Logger `nginx-auth.audit`, `event=... key=value`: registration, removal, authentication success and failure,
+policy rejections, signature counter anomalies, CSRF/Origin rejections, enrollment grants, reset, step-up.
+Credential IDs appear as a short hash. Keys, challenges, assertions, tokens, passwords and secrets are never
+logged.
+
+### Notes and residual risks
+
+- The password is still typed on every login; a phishing page can capture it even though it cannot finish the login.
+- TOTP secrets in `OTP_SECRETS_FILE` are still keyed by the typed username; everything else uses the LDAP `uid`.
+- Password change (`/auth/change-password`) asks for the TOTP code only from users that have a TOTP secret.
+  After the change no session is issued without the second factor the policy requires.
+- With `WEBAUTHN_COUNTER_POLICY=reject` a non-increasing signature counter blocks the login.
+- `/nginx-auth/api/check-*` does not do WebAuthn and does not issue sessions.
+
 ## Environment variables
 
 | Name                       | Default value              | Description                      |
@@ -152,3 +316,23 @@ location = /auth/login { limit_req zone=auth_login burst=5 nodelay; proxy_pass h
 | LOGIN_FAILURE_WINDOW_SECONDS | 900                      | Idle TTL for a limiter bucket    |
 | LOGIN_MAX_CONCURRENT_DELAYS | 32                        | Cap on requests sleeping in a delay |
 | CLIENT_IP_HEADER           | X-Real-IP                  | Client IP for limiter; skipped if absent. nginx must overwrite it |
+| LDAP_UID_ATTRIBUTE         | uid                        | Canonical user id read after bind |
+| LDAP_DISPLAY_NAME_ATTRIBUTE | displayName               | Display name (fallback: uid)     |
+| LDAP_GROUPS_ATTRIBUTE      | memberOf                   | Groups for the policy file       |
+| WEBAUTHN_ENABLED           | false                      | Enable WebAuthn                  |
+| WEBAUTHN_RP_ID             |                            | RP ID, e.g. `example.com`        |
+| WEBAUTHN_RP_NAME           | nginx-auth                 | RP display name                  |
+| WEBAUTHN_ALLOWED_ORIGINS   |                            | Comma-separated origins; each is the RP ID or its subdomain |
+| WEBAUTHN_STORAGE_DIR       | ./webauthn                 | Credential directory             |
+| WEBAUTHN_CHALLENGE_TTL     | 120                        | Ceremony lifetime, seconds       |
+| WEBAUTHN_PREAUTH_TTL       | 300                        | How long a password check stays valid for the second step, seconds |
+| WEBAUTHN_FRESH_AUTH_AGE    | 300                        | How long a key confirmation allows adding a key, seconds |
+| WEBAUTHN_LOGIN_CONTEXT_TTL | 300                        | Login context lifetime, seconds  |
+| WEBAUTHN_COUNTER_POLICY    | reject                     | `reject` / `warn` on signature counter anomalies |
+| WEBAUTHN_POLICY_FILE       |                            | Policy by groups and `policyId`  |
+| WEBAUTHN_POLICY_HEADER     | X-Policy-Id                | Header with `policyId` from nginx |
+| WEBAUTHN_ADMIN_TOKEN       |                            | Admin CLI token (≥ 32 chars); enables the admin API |
+| WEBAUTHN_ADMIN_PORT        | 9092                       | Admin API port on 127.0.0.1      |
+
+Startup fails when `WEBAUTHN_ENABLED=false` but the policy file has WebAuthn requirements, when an origin is not
+under the RP ID, or when the policy file or the credential directory is invalid.
