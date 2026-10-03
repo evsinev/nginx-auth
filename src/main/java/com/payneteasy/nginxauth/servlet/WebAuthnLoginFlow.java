@@ -19,6 +19,7 @@ import com.payneteasy.nginxauth.webauthn.LoginContextStore.LoginContext;
 import com.payneteasy.nginxauth.webauthn.MethodSelector;
 import com.payneteasy.nginxauth.webauthn.PreAuth;
 import com.payneteasy.nginxauth.webauthn.WebAuthnContext;
+import com.payneteasy.nginxauth.webauthn.storage.FileCredentialRepository;
 import com.payneteasy.nginxauth.webauthn.storage.UserRecord;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -89,7 +90,8 @@ final class WebAuthnLoginFlow {
             policyId = context.get().policyId();
             back = context.get().back();
         } else {
-            back = backFromParameter(aRequest);
+            // direct login without a back parameter returns to the site root
+            back = WebAuthnWeb.hasParameter(aRequest, WebAuthnWeb.BACK_URL_NAME) ? backFromParameter(aRequest) : "/";
             if (back == null) {
                 web.loginForm(aResponse, state, "", null, null, "Bad back url");
                 return;
@@ -172,15 +174,23 @@ final class WebAuthnLoginFlow {
         } catch (IllegalArgumentException e) {
             policy = null;
         }
-        boolean usable = webauthn.service().isUsableFor(uid);
+        boolean validUid = FileCredentialRepository.isValidUid(uid);
+        boolean known = !validUid || !webauthn.repository().isFailed();
+        boolean usable = validUid && known;
         UserRecord record = usable ? webauthn.repository().find(uid).orElse(null) : null;
         boolean eligible = policy != null && AccessChecker.hasEligible(record, policy);
+        boolean grant = record != null && record.enrollmentGrant() != null && record.enrollmentGrant().isUsable(System.currentTimeMillis());
         MethodSelector.Method method = policy == null ? MethodSelector.Method.DENY
-                : MethodSelector.select(policy, app.otpEnabled(), codeProvided || totpVerified, eligible, usable);
+                : MethodSelector.select(policy, app.otpEnabled(), codeProvided || totpVerified, eligible, usable, known, grant);
 
         switch (method) {
             case DENY -> {
                 attempt.succeeded();
+                if (!known) {
+                    LOG.error("Credential storage is unavailable; login of {} refused", uid);
+                    form(aResponse, false, state, back, contextId, username, "Internal error. Please try again later.");
+                    return;
+                }
                 Audit.log("access_denied_by_policy", "uid", uid, "policyId", policyId, "stage", "login");
                 form(aResponse, false, state, back, contextId, username, "Access denied by policy");
             }

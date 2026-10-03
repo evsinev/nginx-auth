@@ -332,6 +332,49 @@ public class WebAuthnHttpTest {
         assertEquals(AuthenticationMethod.LDAP_WEBAUTHN, session(browser).getMethod());
     }
 
+    @Test
+    public void directLoginWithoutBackGoesToRoot() throws Exception {
+        start(null, false);
+        server.user("kate", "pw");
+        Browser browser = browser();
+        Browser.Response page = browser.get("/auth");
+        assertFalse(page.body.contains("Bad back url"));
+        Browser.Response response = browser.postForm("/auth/login",
+                form("j_username", "kate", "j_password", "pw", "j_csrf", page.csrf(), "back", "/"));
+        assertEquals(302, response.status);
+        assertTrue(response.header("Location").endsWith("/"));
+    }
+
+    @Test
+    public void unavailableStorageDoesNotFallBackToPasswordOnly() throws Exception {
+        start(null, false);
+        server.user("liam", "pw");
+        java.lang.reflect.Field failed = server.webauthn.repository().getClass().getDeclaredField("failed");
+        failed.setAccessible(true);
+        failed.set(server.webauthn.repository(), true);
+        Browser browser = browser();
+        Browser.Response response = login(browser, "back=%2Fapp", "liam", "pw", null);
+        assertEquals(200, response.status);
+        assertTrue(response.body.contains("Internal error"));
+        assertNull(browser.cookies.get("AUTH_TOKEN"));
+    }
+
+    @Test
+    public void recoveryAfterResetForOptionalWebAuthnUser() throws Exception {
+        start(null, true);
+        server.user("mia", "pw");
+        String secret = adminCall("POST", "/admin/webauthn/reset", "{\"uid\":\"mia\",\"grant\":true,\"issuedBy\":\"it\"}", TestServer.ADMIN_TOKEN)
+                .get("secret").getAsString();
+        Browser browser = browser();
+        Browser.Response response = login(browser, "back=%2Fapp", "mia", "pw", null);
+        assertEquals(303, response.status);
+        String csrf = browser.get("/auth/verify").csrf();
+        assertEquals(303, browser.postForm("/auth/recovery", form("j_secret", secret, "j_csrf", csrf)).status);
+        JsonObject result = ceremony(browser, csrf, purpose("recovery_enroll"), new SoftAuthenticator());
+        assertEquals("/app", result.get("redirect").getAsString());
+        assertEquals(AuthenticationMethod.LDAP_WEBAUTHN, session(browser).getMethod());
+    }
+
     // ------------------------------------------------------------------ logout and admin
 
     @Test

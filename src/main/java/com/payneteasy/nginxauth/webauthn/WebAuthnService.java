@@ -17,6 +17,7 @@ import com.payneteasy.nginxauth.webauthn.storage.FileCredentialRepository;
 import com.payneteasy.nginxauth.webauthn.storage.IWebAuthnCredentialRepository;
 import com.payneteasy.nginxauth.webauthn.storage.StorageException;
 import com.payneteasy.nginxauth.webauthn.storage.StoredCredential;
+import com.payneteasy.nginxauth.webauthn.storage.UserLocks;
 import com.payneteasy.nginxauth.webauthn.storage.UserRecord;
 import com.payneteasy.nginxauth.webauthn.storage.YubicoRepositoryAdapter;
 import com.yubico.webauthn.AssertionRequest;
@@ -65,6 +66,8 @@ public final class WebAuthnService {
     static final int    MAX_NAME_LENGTH = 64;
     static final String DEFAULT_NAME    = "Security key";
     static final int    USER_HANDLE_BYTES = 64;
+    static final int    MAX_CREDENTIALS = 20;
+    static final java.util.Set<String> KNOWN_TRANSPORTS = java.util.Set.of("usb", "nfc", "ble", "hybrid", "internal", "smart-card");
 
     public record Ceremony(String transactionId, String type, String publicKeyJson) {
     }
@@ -180,6 +183,9 @@ public final class WebAuthnService {
         requireUsable(uid);
         EffectivePolicy groupPolicy = resolver.resolve(session.getGroups());
         UserRecord record = repository.locks().withLock(uid, () -> ensureRecord(uid));
+        if (record.credentials().size() >= MAX_CREDENTIALS) {
+            throw new WebAuthnException("too_many_credentials", "Too many security keys. Remove one first.");
+        }
         if (record.credentials().isEmpty()) {
             if (groupPolicy.requireWebAuthn()) {
                 throw new WebAuthnException("bootstrap_forbidden", "Your account requires a security key. Ask an administrator for an enrollment secret.");
@@ -340,20 +346,48 @@ public final class WebAuthnService {
                 ? policy(aTx.groups(), aTx.policyId())
                 : resolver.resolve(aTx.groups());
 
-        FinishResult published = repository.locks().withLock(aTx.uid(),
-                () -> commitAssertion(aState, aTx, credentialId, receivedBe, receivedBs, receivedCount, result.isUserVerified(), policy));
-        if (published instanceof NextCeremony next) {
-            return next;
+        return repository.locks().withLock(aTx.uid(), () -> guarded(aState, aTx,
+                () -> commitAssertion(aState, aTx, credentialId, receivedBe, receivedBs, receivedCount, result.isUserVerified(), policy)));
+    }
+
+    /**
+     * Runs a commit under lock(uid) after re-checking, with the current time, everything that may have changed
+     * since finish started. Pre-session commits also hold the browser state monitor, so a logout or a new LDAP
+     * login in the same browser either happens before (and the commit fails) or after the result is published.
+     */
+    private <T> T guarded(BrowserState aState, Transaction aTx, UserLocks.Action<T, WebAuthnException> aCommit) throws WebAuthnException {
+        beforeCommitHook.run();
+        if (!aTx.purpose().isPreSession()) {
+            checkCommit(aState, aTx);
+            return aCommit.run();
         }
-        return published;
+        synchronized (aState) {
+            checkCommit(aState, aTx);
+            return aCommit.run();
+        }
+    }
+
+    private void checkCommit(BrowserState aState, Transaction aTx) throws WebAuthnException {
+        long now = clock.getAsLong();
+        if (now >= aTx.expiresAt()) {
+            throw new WebAuthnException("transaction_expired", "This request has expired. Please try again.");
+        }
+        checkEpoch(aTx);
+        if (aTx.purpose().isPreSession()) {
+            PreAuth pre = aState.preAuth();
+            if (pre == null || !pre.preauthId().equals(aTx.preauthId())) {
+                throw new WebAuthnException("preauth_changed", "Your login has expired. Please enter your password again.");
+            }
+            if (now - aTx.ldapAuthTime() > config.getPreauthTtlMillis()) {
+                throw new WebAuthnException("preauth_expired", "Your login has expired. Please enter your password again.");
+            }
+        }
     }
 
     private FinishResult commitAssertion(BrowserState aState, Transaction aTx, String aCredentialId, boolean aBe, boolean aBs,
                                          long aCount, boolean aUv, EffectivePolicy aPolicy) throws WebAuthnException {
         String uid = aTx.uid();
         long now = clock.getAsLong();
-        beforeCommitHook.run();
-        checkEpoch(aTx);
         UserRecord record = repository.find(uid).orElseThrow(() -> new WebAuthnException("credential_missing"));
         StoredCredential stored = record.find(aCredentialId).orElseThrow(() -> new WebAuthnException("credential_missing"));
         if (stored.backupEligible() != aBe) {
@@ -466,16 +500,18 @@ public final class WebAuthnService {
         }
         List<String> transports = new ArrayList<>();
         for (AuthenticatorTransport transport : credential.getResponse().getTransports()) {
-            transports.add(transport.getId());
+            // the browser value is untrusted: keep only known transports so the stored record stays small
+            if (KNOWN_TRANSPORTS.contains(transport.getId()) && !transports.contains(transport.getId())) {
+                transports.add(transport.getId());
+            }
         }
         long now = clock.getAsLong();
         StoredCredential stored = new StoredCredential(credentialId, result.getPublicKeyCose().getBase64Url(), result.getSignatureCount(),
                 aaguid, be, bs, transports, sanitizeName(aName), now, 0L);
         String expectedHandle = aTx.creationOptions().getUser().getId().getBase64Url();
 
-        repository.locks().withLock(aTx.uid(), () -> {
-            beforeCommitHook.run();
-            checkEpoch(aTx);
+        repository.locks().withLock(aTx.uid(), () -> guarded(aState, aTx, () -> {
+            long commitNow = clock.getAsLong();
             UserRecord record = repository.find(aTx.uid()).orElseThrow(() -> new WebAuthnException("user_missing"));
             if (!record.userHandle().equals(expectedHandle)) {
                 throw new WebAuthnException("user_handle_changed");
@@ -483,17 +519,20 @@ public final class WebAuthnService {
             if (record.find(credentialId).isPresent()) {
                 throw new WebAuthnException("duplicate_credential", "This security key is already registered.");
             }
+            if (record.credentials().size() >= MAX_CREDENTIALS) {
+                throw new WebAuthnException("too_many_credentials", "Too many security keys. Remove one first.");
+            }
             if (aTx.bootstrap() && !record.credentials().isEmpty()) {
                 throw new WebAuthnException("bootstrap_lost", "A security key was registered meanwhile. Confirm with it to add another one.");
             }
             UserRecord updated = record;
             if (aTx.purpose() == Purpose.RECOVERY_ENROLL) {
                 PreAuth pre = aState.preAuth();
-                if (pre == null || !pre.preauthId().equals(aTx.preauthId()) || !aTx.grantId().equals(pre.recoveryGrantId())) {
+                if (pre == null || !aTx.grantId().equals(pre.recoveryGrantId())) {
                     throw new WebAuthnException("preauth_changed", "Your login has expired. Please enter your password again.");
                 }
                 EnrollmentGrant grant = record.enrollmentGrant();
-                if (grant == null || !grant.grantId().equals(aTx.grantId()) || !grant.isUsable(now)) {
+                if (grant == null || !grant.grantId().equals(aTx.grantId()) || !grant.isUsable(commitNow)) {
                     throw new WebAuthnException("grant_invalid", "The enrollment secret is no longer valid.");
                 }
                 EnrollmentGrant used = grant.used();
@@ -510,7 +549,7 @@ public final class WebAuthnService {
                 states.updatePreAuth(aState, aTx.preauthId(), p -> p.withEnrolledCredential(credentialId));
             }
             return null;
-        });
+        }));
 
         if (aTx.purpose() == Purpose.RECOVERY_ENROLL) {
             return new NextCeremony(startLogin(aState, aTx.expectedOrigin()));

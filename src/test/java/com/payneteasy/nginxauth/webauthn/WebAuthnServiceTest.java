@@ -248,6 +248,43 @@ public class WebAuthnServiceTest {
         expectFailure("preauth_changed", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
     }
 
+    @Test
+    public void newLdapLoginRightBeforeCommitGetsNoSession() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.service.beforeCommitHook = () -> f.ldapLogin(state, "alice", List.of("cn=other"), "none");
+        expectFailure("preauth_changed", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
+        assertEquals(0L, f.repository.find("alice").orElseThrow().credentials().get(0).lastUsedAt());
+    }
+
+    @Test
+    public void logoutRightBeforeCommitGetsNoSession() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.service.beforeCommitHook = () -> f.states.clearPreAuth(state, null);
+        expectFailure("preauth_changed", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
+    }
+
+    @Test
+    public void transactionExpiringWhileWaitingForLockIsRejected() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.service.beforeCommitHook = () -> f.now.addAndGet(f.config.getChallengeTtlMillis());
+        expectFailure("transaction_expired", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
+    }
+
     // ------------------------------------------------------------- step-up
 
     @Test
@@ -540,6 +577,34 @@ public class WebAuthnServiceTest {
         String second = new SoftAuthenticator().create(c2.publicKeyJson(), ORIGIN);
         expectFailure("grant_invalid", () -> f.service.finish(b2, ORIGIN, null, "recovery_enroll", c2.transactionId(), second, null));
         assertEquals(1, f.repository.find("alice").orElseThrow().credentials().size());
+    }
+
+    @Test
+    public void grantExpiringWhileWaitingForLockIsNotUsed() throws Exception {
+        f = new WebAuthnFixture();
+        String secret = f.service.adminIssueGrant("alice", new WebAuthnService.GrantSpec(1, 1, "test"));
+        f.now.addAndGet(3_600_000L - 10_000L);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        assertTrue(f.service.verifyRecoverySecret(state, secret));
+        Ceremony create = f.service.startRecoveryEnroll(state, ORIGIN);
+        String response = new SoftAuthenticator().create(create.publicKeyJson(), ORIGIN);
+        f.service.beforeCommitHook = () -> f.now.addAndGet(20_000L);
+        expectFailure("grant_invalid", () -> f.service.finish(state, ORIGIN, null, "recovery_enroll", create.transactionId(), response, null));
+        UserRecord record = f.repository.find("alice").orElseThrow();
+        assertTrue(record.credentials().isEmpty());
+        assertEquals(1, record.enrollmentGrant().usesLeft());
+    }
+
+    @Test
+    public void unknownTransportsAreNotStored() throws Exception {
+        f = new WebAuthnFixture();
+        String token = f.totpSession("alice", List.of());
+        BrowserState state = f.browser();
+        Ceremony ceremony = f.service.startRegister(state, ORIGIN, token);
+        String response = new SoftAuthenticator().create(ceremony.publicKeyJson(), ORIGIN)
+                .replace("\"transports\":[\"usb\"]", "\"transports\":[\"usb\",\"" + "x".repeat(50_000) + "\"]");
+        f.service.finish(state, ORIGIN, token, "register", ceremony.transactionId(), response, null);
+        assertEquals(List.of("usb"), f.repository.find("alice").orElseThrow().credentials().get(0).transports());
     }
 
     @Test

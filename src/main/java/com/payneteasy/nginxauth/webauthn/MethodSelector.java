@@ -22,13 +22,19 @@ public final class MethodSelector {
     private MethodSelector() {
     }
 
+    /**
+     * @param aCredentialsKnown false when the credential storage is unavailable: then nothing that depends on
+     *                          "the user has no security key" may be chosen
+     * @param aHasUsableGrant   an enrollment grant exists, so recovery is offered instead of a dead end
+     */
     public static Method select(EffectivePolicy aPolicy, boolean aOtpEnabled, boolean aCodeProvided,
-                                boolean aHasEligibleCredentials, boolean aWebAuthnUsable) {
+                                boolean aHasEligibleCredentials, boolean aWebAuthnUsable, boolean aCredentialsKnown,
+                                boolean aHasUsableGrant) {
         if (aPolicy.denyAll()) {
             return Method.DENY;
         }
         if (aPolicy.requireWebAuthn()) {
-            if (!aWebAuthnUsable) {
+            if (!aWebAuthnUsable || !aCredentialsKnown) {
                 return Method.DENY;
             }
             return aHasEligibleCredentials ? Method.WEBAUTHN : Method.RECOVERY;
@@ -36,8 +42,14 @@ public final class MethodSelector {
         if (aOtpEnabled && aCodeProvided) {
             return Method.TOTP;
         }
+        if (!aCredentialsKnown) {
+            return Method.DENY;
+        }
         if (aHasEligibleCredentials && aWebAuthnUsable) {
             return Method.WEBAUTHN;
+        }
+        if (aHasUsableGrant && aWebAuthnUsable) {
+            return Method.RECOVERY;
         }
         if (aOtpEnabled) {
             return Method.CODE_REQUIRED;

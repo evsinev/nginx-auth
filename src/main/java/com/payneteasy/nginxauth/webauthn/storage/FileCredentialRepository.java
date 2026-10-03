@@ -130,6 +130,11 @@ public final class FileCredentialRepository implements IWebAuthnCredentialReposi
             throw new StorageException("Credential storage is in failed state");
         }
         checkRecord(aRecord);
+        byte[] encoded = UserRecordCodec.encode(aRecord);
+        if (encoded.length > MAX_FILE_BYTES) {
+            // never write what the next startup would refuse to load
+            throw new StorageException("Credential record is too large");
+        }
 
         UserRecord old = cache.get(uid);
         Set<String> oldIds = old == null ? Set.of() : credentialIds(old);
@@ -144,7 +149,7 @@ public final class FileCredentialRepository implements IWebAuthnCredentialReposi
         Path target = fileFor(uid);
         Path temp = directory.resolve("." + uid + "." + Long.toHexString(random.nextLong()) + SUFFIX + TEMP_SUFFIX);
         try {
-            fileOps.writeAndSync(temp, UserRecordCodec.encode(aRecord));
+            fileOps.writeAndSync(temp, encoded);
         } catch (IOException e) {
             deleteQuietly(temp);
             unreserve(uid, aRecord.userHandle(), added, old);
@@ -172,8 +177,11 @@ public final class FileCredentialRepository implements IWebAuthnCredentialReposi
         try {
             fileOps.syncDirectory(directory);
         } catch (IOException e) {
-            // the rename is visible: disk and cache agree, only durability of the rename is unknown
-            LOG.error("Can't fsync credential directory after writing {}", target.getFileName(), e);
+            // the rename is visible and the cache follows it, but it may not survive a crash: report the
+            // operation as failed and refuse further changes until restart
+            failed = true;
+            LOG.error("Can't fsync credential directory after writing {}; refusing further changes until restart", target.getFileName(), e);
+            throw new StorageException("Can't fsync credential directory", e);
         }
     }
 

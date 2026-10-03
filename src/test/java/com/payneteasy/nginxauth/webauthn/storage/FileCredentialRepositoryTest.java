@@ -255,13 +255,46 @@ public class FileCredentialRepositoryTest {
     }
 
     @Test
-    public void directoryFsyncFailureKeepsNewState() throws Exception {
+    public void directoryFsyncFailureFailsOperationAndStopsChanges() throws Exception {
         FailingOps ops = new FailingOps();
         FileCredentialRepository repository = FileCredentialRepository.open(dir, ops, new UserLocks());
         ops.failDirSync = true;
-        save(repository, UserRecord.empty("alice", "aGFuZGxl").withCredential(credential("Y3JlZDE")));
+        try {
+            save(repository, UserRecord.empty("alice", "aGFuZGxl").withCredential(credential("Y3JlZDE")));
+            fail();
+        } catch (StorageException expected) {
+            // ok
+        }
+        assertTrue(repository.isFailed());
+        // the cache follows the renamed file
         assertEquals(Optional.of("alice"), repository.ownerOfCredential("Y3JlZDE"));
-        assertEquals(1, FileCredentialRepository.open(dir, new UserLocks()).find("alice").orElseThrow().credentials().size());
+        ops.failDirSync = false;
+        try {
+            save(repository, UserRecord.empty("bob", "b3RoZXI"));
+            fail();
+        } catch (StorageException expected) {
+            // ok
+        }
+    }
+
+    @Test
+    public void recordThatCouldNotBeLoadedIsNotWritten() throws Exception {
+        FileCredentialRepository repository = FileCredentialRepository.open(dir, new UserLocks());
+        UserRecord record = UserRecord.empty("alice", "aGFuZGxl");
+        String huge = "x".repeat(60_000);
+        for (int i = 0; i < 20; i++) {
+            record = record.withCredential(new StoredCredential("Y3JlZC" + i, "cose", 0, "00000000-0000-0000-0000-000000000000",
+                    false, false, List.of(huge), "key", 1000L, 0L));
+        }
+        UserRecord tooLarge = record;
+        try {
+            save(repository, tooLarge);
+            fail();
+        } catch (StorageException e) {
+            assertTrue(e.getMessage().contains("too large"));
+        }
+        assertFalse(repository.ownerOfCredential("Y3JlZC0").isPresent());
+        FileCredentialRepository.open(dir, new UserLocks());
     }
 
     @Test

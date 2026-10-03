@@ -90,7 +90,14 @@ public class ShowLoginFormServlet extends HttpServlet {
             }
             context = claimed.get();
         }
-        String back = context != null ? context.back() : WebAuthnLoginFlow.backFromParameter(aRequest);
+        String back;
+        if (context != null) {
+            back = context.back();
+        } else if (WebAuthnWeb.hasParameter(aRequest, BACK_URL_NAME)) {
+            back = WebAuthnLoginFlow.backFromParameter(aRequest);
+        } else {
+            back = "/";
+        }
         String contextId = context != null ? context.contextId() : null;
         String reason = back == null ? "Bad back url" : null;
 
