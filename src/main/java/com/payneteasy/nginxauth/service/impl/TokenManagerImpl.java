@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth.service.impl;
 
+import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.service.AuthenticationMethod;
 import com.payneteasy.nginxauth.service.ITokenManager;
 import com.payneteasy.nginxauth.service.Session;
@@ -127,7 +128,12 @@ public class TokenManagerImpl implements ITokenManager {
         if (aLoginName == null) {
             return;
         }
-        removeIf(session -> aLoginName.equalsIgnoreCase(session.getLoginName()));
+        removeIf(session -> LoginNames.same(aLoginName, session.getLoginName()));
+    }
+
+    @Override
+    public void invalidateMatching(Predicate<Session> aPredicate) {
+        removeIf(aPredicate);
     }
 
     int size() {

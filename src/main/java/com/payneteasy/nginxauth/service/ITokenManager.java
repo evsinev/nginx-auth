@@ -30,7 +30,9 @@ public interface ITokenManager {
 
     void invalidateByBrowserBinding(String aBrowserBinding);
 
-    /** Login names select the bind DN and compare case-insensitively, like LDAP attribute values. */
+    /** Login names select the bind DN and compare like LDAP attribute values ({@code LoginNames}). */
     void invalidateByLoginName(String aLoginName);
+
+    void invalidateMatching(java.util.function.Predicate<Session> aPredicate);
 
 }

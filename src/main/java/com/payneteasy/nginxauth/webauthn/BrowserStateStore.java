@@ -1,5 +1,7 @@
 package com.payneteasy.nginxauth.webauthn;
 
+import com.payneteasy.nginxauth.ldap.LoginNames;
+
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
@@ -128,10 +130,14 @@ public final class BrowserStateStore {
     }
 
     public void clearPreAuthForLogin(String aLoginName) {
+        clearPreAuthIf(pre -> LoginNames.same(aLoginName, pre.loginName()));
+    }
+
+    public void clearPreAuthIf(java.util.function.Predicate<PreAuth> aPredicate) {
         for (BrowserState state : states.values()) {
             synchronized (state) {
                 PreAuth current = state.preAuth;
-                if (current != null && current.loginName() != null && current.loginName().equalsIgnoreCase(aLoginName)) {
+                if (current != null && aPredicate.test(current)) {
                     state.preAuth = null;
                 }
             }

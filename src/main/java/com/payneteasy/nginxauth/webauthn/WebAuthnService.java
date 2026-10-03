@@ -3,6 +3,7 @@ package com.payneteasy.nginxauth.webauthn;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.policy.AccessChecker;
 import com.payneteasy.nginxauth.policy.EffectivePolicy;
 import com.payneteasy.nginxauth.policy.PolicyResolver;
@@ -659,6 +660,24 @@ public final class WebAuthnService {
                 }));
             }
         });
+    }
+
+    /**
+     * Second step of a password change, once the uid is readable (expired password: it was not before the
+     * change). Ends every session, pre-auth and transaction of the uid, except those this login name published
+     * with the new generation, i.e. logins with the new password. No new bump, so those logins stay valid.
+     */
+    public void revokeUserAfterPasswordChange(String aUid, String aLoginName, long aGeneration) {
+        java.util.function.Predicate<String> sameLogin = login -> LoginNames.same(aLoginName, login);
+        repository.locks().withLock(aUid, () -> {
+            tokens.invalidateMatching(session -> aUid.equals(session.getCanonicalUid())
+                    && !(sameLogin.test(session.getLoginName()) && session.getLoginGeneration() == aGeneration));
+            transactions.cancelForUser(aUid);
+            return null;
+        });
+        states.clearPreAuthIf(pre -> aUid.equals(pre.uid())
+                && !(sameLogin.test(pre.loginName()) && pre.loginGeneration() == aGeneration));
+        Audit.log("sessions_revoked", "uid", aUid, "reason", "password_changed");
     }
 
     /** Read before the LDAP bind of a login request. */

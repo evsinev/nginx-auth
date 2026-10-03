@@ -495,6 +495,31 @@ public class WebAuthnServiceTest {
     }
 
     @Test
+    public void passwordChangeRevokesOtherSpellingsOfTheLogin() throws Exception {
+        f = new WebAuthnFixture();
+        String other = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("Olga  Smith", 0L));
+        f.service.revokeAfterPasswordChange(null, "olga smith");
+        assertFalse(f.tokens.peekSession(other).isPresent());
+    }
+
+    @Test
+    public void uidCleanupKeepsLoginsWithTheNewPassword() throws Exception {
+        f = new WebAuthnFixture();
+        String stolen = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("osmith", 0L));
+        long generation = f.service.revokeAfterPasswordChange(null, "Olga Smith");
+        String fresh = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("olga smith", generation));
+        assertTrue(f.tokens.peekSession(stolen).isPresent());
+        f.service.revokeUserAfterPasswordChange("osmith", "Olga Smith", generation);
+        assertFalse(f.tokens.peekSession(stolen).isPresent());
+        assertTrue(f.tokens.peekSession(fresh).isPresent());
+        // and no new bump: the fresh session is still current
+        assertTrue(f.service.isCurrent(f.tokens.peekSession(fresh).orElseThrow()));
+    }
+
+    @Test
     public void passwordChangeRevokesSessionPublishedJustBefore() throws Exception {
         f = new WebAuthnFixture();
         BrowserState state = f.browser();

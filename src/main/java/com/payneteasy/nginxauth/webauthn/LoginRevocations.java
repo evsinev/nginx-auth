@@ -1,12 +1,12 @@
 package com.payneteasy.nginxauth.webauthn;
 
-import java.util.Locale;
+import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.webauthn.storage.UserLocks;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Revocation generation per login name (the typed name that selects the bind DN, case-insensitive).
+ * Revocation generation per login name (the typed name that selects the bind DN, compared as {@link LoginNames}).
  * A login request reads the generation before its LDAP bind and may publish a session or pre-auth only while
  * the generation is unchanged; a password change bumps it. Check and publication are atomic with the bump,
  * and a password change revokes sessions by login name after bumping, so a result published just before the
@@ -56,6 +56,6 @@ public final class LoginRevocations {
     }
 
     private static String key(String aLoginName) {
-        return aLoginName.toLowerCase(Locale.ROOT);
+        return LoginNames.normalize(aLoginName);
     }
 }

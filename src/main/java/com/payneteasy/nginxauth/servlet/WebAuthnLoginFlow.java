@@ -170,6 +170,10 @@ final class WebAuthnLoginFlow {
                     web.loginForm(aResponse, state, back, contextId, username, "Password changed. Please log in with the new password.");
                     return;
                 }
+                if (!principal.getCanonicalUid().equals(knownUid)) {
+                    // the uid was not readable before the change: end what other spellings of the login published
+                    webauthn.service().revokeUserAfterPasswordChange(principal.getCanonicalUid(), username, loginGeneration);
+                }
 
             } else {
                 principal = app.authService().authenticatePrincipal(username, password);
