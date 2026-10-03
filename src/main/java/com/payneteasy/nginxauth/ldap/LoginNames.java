@@ -4,13 +4,14 @@ import java.text.Normalizer;
 import java.util.Locale;
 
 /**
- * Comparison form of a login name, following LDAP caseIgnoreMatch preparation (RFC 4518 §2): map
- * (§2.2: some code points to nothing, separators and some controls to space), case fold, NFKC, then
- * insignificant space handling (trim, collapse). Spellings that select the same bind DN compare equal;
- * names LDAP keeps apart (ı and i) stay apart.
+ * Comparison form of a login name for revocation, deliberately <b>coarser</b> than LDAP caseIgnoreMatch
+ * (RFC 4518): map (§2.2), full case fold through upper case, NFKC, fold again, NFKC, then trim and collapse
+ * spaces. Every pair of spellings LDAP binds to one entry compares equal here; some names LDAP keeps apart
+ * also compare equal (ı and i).
  *
- * <p>Used only to find what a password change must revoke and to key the login limiter. The TOTP secret is
- * looked up by the exact typed name, so an imperfect match here never selects another account's factor.
+ * <p>That is safe because it is used only where merging too much costs an extra revocation or a shared
+ * limiter bucket: what a password change revokes and the login failure counter. Nothing that grants access
+ * depends on it; the TOTP secret is looked up by the exact typed name.
  */
 public final class LoginNames {
 
@@ -21,12 +22,12 @@ public final class LoginNames {
         if (aLoginName == null) {
             return null;
         }
-        String folded = fold(map(aLoginName));
-        String nfkc = Normalizer.normalize(folded, Normalizer.Form.NFKC);
-        StringBuilder sb = new StringBuilder(nfkc.length());
+        // fold again after NFKC: compatibility forms may decompose to upper case (ℂ → C)
+        String prepared = Normalizer.normalize(fold(Normalizer.normalize(fold(map(aLoginName)), Normalizer.Form.NFKC)), Normalizer.Form.NFKC);
+        StringBuilder sb = new StringBuilder(prepared.length());
         boolean space = false;
-        for (int i = 0; i < nfkc.length(); i++) {
-            char c = nfkc.charAt(i);
+        for (int i = 0; i < prepared.length(); i++) {
+            char c = prepared.charAt(i);
             if (c == ' ') {
                 space = sb.length() > 0;
                 continue;
@@ -73,53 +74,14 @@ public final class LoginNames {
     }
 
     /**
-     * Case folding per code point: simple lower case, plus the RFC 3454 B.2 mappings that lower case does not
-     * produce. No round trip through upper case, so letters without a B.2 mapping stay as they are (dotless ı
-     * does not become i, U+1C80 does not become в). Compatibility forms (ligatures, ﬀ) are handled by NFKC.
+     * Full case folding approximated per code point by upper then lower case (Java applies Unicode special
+     * casing: ß → ss, ᾀ → ἀι, ſ → s). Merges a little more than RFC 3454 B.2 (ı → i), which is fine here.
      */
     static String fold(String aValue) {
         StringBuilder sb = new StringBuilder(aValue.length());
-        aValue.codePoints().forEach(cp -> {
-            if (cp == 0x0130) {
-                sb.append("i\u0307");
-                return;
-            }
-            int lower = Character.toLowerCase(cp);
-            String special = FULL_FOLDS.get(lower);
-            if (special != null) {
-                sb.append(special);
-            } else {
-                sb.appendCodePoint(lower);
-            }
-        });
+        aValue.codePoints().forEach(cp -> sb.append(new String(Character.toChars(cp)).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT)));
         return sb.toString();
     }
-
-    /** RFC 3454 B.2 entries for code points that are already lower case (or become so) but still fold. */
-    private static final java.util.Map<Integer, String> FULL_FOLDS = java.util.Map.ofEntries(
-            java.util.Map.entry(0x00DF, "ss"),            // ß
-            java.util.Map.entry(0x0149, "\u02BCn"),       // ŉ
-            java.util.Map.entry(0x017F, "s"),             // ſ
-            java.util.Map.entry(0x01F0, "j\u030C"),       // ǰ
-            java.util.Map.entry(0x0345, "\u03B9"),        // combining ypogegrammeni → ι
-            java.util.Map.entry(0x0390, "\u03B9\u0308\u0301"),
-            java.util.Map.entry(0x03B0, "\u03C5\u0308\u0301"),
-            java.util.Map.entry(0x03C2, "\u03C3"),        // ς → σ
-            java.util.Map.entry(0x03D0, "\u03B2"),        // ϐ → β
-            java.util.Map.entry(0x03D1, "\u03B8"),        // ϑ → θ
-            java.util.Map.entry(0x03D5, "\u03C6"),        // ϕ → φ
-            java.util.Map.entry(0x03D6, "\u03C0"),        // ϖ → π
-            java.util.Map.entry(0x03F0, "\u03BA"),        // ϰ → κ
-            java.util.Map.entry(0x03F1, "\u03C1"),        // ϱ → ρ
-            java.util.Map.entry(0x03F5, "\u03B5"),        // ϵ → ε
-            java.util.Map.entry(0x0587, "\u0565\u0582"), // և
-            java.util.Map.entry(0x1E96, "h\u0331"),
-            java.util.Map.entry(0x1E97, "t\u0308"),
-            java.util.Map.entry(0x1E98, "w\u030A"),
-            java.util.Map.entry(0x1E99, "y\u030A"),
-            java.util.Map.entry(0x1E9A, "a\u02BE"),
-            java.util.Map.entry(0x1E9B, "\u1E61")         // ẛ → ṡ
-    );
 
     public static boolean same(String aFirst, String aSecond) {
         return aFirst != null && aSecond != null && normalize(aFirst).equals(normalize(aSecond));
