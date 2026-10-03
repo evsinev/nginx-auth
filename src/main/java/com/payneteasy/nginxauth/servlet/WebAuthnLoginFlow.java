@@ -118,10 +118,9 @@ final class WebAuthnLoginFlow {
         }
         boolean codeProvided = app.otpEnabled() && StringUtils.hasText(otp);
 
-        // spellings LDAP treats as one login share the failure counter and the TOTP secret
+        // spellings LDAP treats as one login share the failure counter; the TOTP secret is looked up by the
+        // exact name only (a different spelling simply fails the code check, it never selects another secret)
         RateLimiter.Attempt attempt = LoginAttempts.begin(aRequest, LoginNames.normalize(username));
-        String otpName = app.otpEnabled() ? app.otpService().resolveSecretName(username) : null;
-        String otpUser = otpName != null ? otpName : username;
         attempt.awaitDelay();
         if (attempt.denied()) {
             LOG.warn("Login throttled [user:{}]", username);
@@ -150,11 +149,13 @@ final class WebAuthnLoginFlow {
                     app.authService().authenticate(username, password, false);
                 }
                 if (codeProvided) {
-                    if (!app.otpService().checkCode(otpUser, parseCode(otp))) {
+                    if (!app.otpService().checkCode(username, parseCode(otp))) {
                         throw new AuthenticationException("Authentication failed");
                     }
                     totpVerified = true;
-                } else if (otpName != null) {
+                } else if (app.otpEnabled() && !hasSecurityKeys(knownUid)) {
+                    // as before WebAuthn: with OTP on, a password change needs the code, unless the directory
+                    // identity (read with the old password, not the typed name) already uses security keys
                     web.changePasswordForm(aResponse, state, back, contextId, username, "Verification code is empty");
                     return;
                 }
@@ -221,7 +222,7 @@ final class WebAuthnLoginFlow {
                 form(aResponse, false, state, back, contextId, username, "Access denied by policy");
             }
             case TOTP -> {
-                if (!totpVerified && !app.otpService().checkCode(otpUser, parseCode(otp))) {
+                if (!totpVerified && !app.otpService().checkCode(username, parseCode(otp))) {
                     attempt.failed();
                     LOG.warn("User {} OTP verification failed", username);
                     form(aResponse, aChangePassword, state, back, contextId, username, "Authentication failed");
@@ -273,6 +274,11 @@ final class WebAuthnLoginFlow {
         } else {
             web.loginForm(aResponse, aState, aBack, aContextId, aUsername, aReason);
         }
+    }
+
+    private boolean hasSecurityKeys(String aUid) {
+        return aUid != null && webauthn.service().isUsableFor(aUid)
+                && webauthn.repository().find(aUid).map(record -> !record.credentials().isEmpty()).orElse(false);
     }
 
     private static String newPasswordProblem(String aPassword, String aRepeated) {

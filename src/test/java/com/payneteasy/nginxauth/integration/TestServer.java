@@ -167,14 +167,5 @@ final class TestServer implements AutoCloseable {
             return Boolean.TRUE.equals(totpUsers.get(aUsername));
         }
 
-        @Override
-        public String resolveSecretName(String aUsername) {
-            for (String name : totpUsers.keySet()) {
-                if (com.payneteasy.nginxauth.ldap.LoginNames.same(name, aUsername)) {
-                    return name;
-                }
-            }
-            return null;
-        }
     }
 }

@@ -1,6 +1,5 @@
 package com.payneteasy.nginxauth.service.impl;
 
-import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import org.apache.commons.codec.binary.Base32;
 import org.slf4j.Logger;
@@ -67,33 +66,6 @@ public class OtpSecretStore {
     public String getSecret(String username) {
         ensureFresh();
         return secrets.get(username);
-    }
-
-    /** Returned by {@link #resolveName} when several stored names match: has no secret, so no code passes. */
-    public static final String AMBIGUOUS = "";
-
-    /**
-     * Name under which the secret of this login is stored: the only stored name that is the same login
-     * ({@link LoginNames}); {@link #AMBIGUOUS} when several match, even if one is spelled exactly as typed,
-     * because LDAP binds all of them to one entry; null when there is none.
-     */
-    public String resolveName(String username) {
-        ensureFresh();
-        Map<String, String> current = secrets;
-        if (username == null) {
-            return null;
-        }
-        String found = null;
-        for (String name : current.keySet()) {
-            if (LoginNames.same(name, username)) {
-                if (found != null) {
-                    // never guess between two secrets: TOTP stays required and no code is accepted
-                    return AMBIGUOUS;
-                }
-                found = name;
-            }
-        }
-        return found;
     }
 
     public String dummySecret() {

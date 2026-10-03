@@ -391,6 +391,35 @@ public class WebAuthnHttpTest {
     }
 
     @Test
+    public void totpOfAnotherSpellingIsNeverUsed() throws Exception {
+        start(null, true);
+        server.user("Olga Smith", "pw");
+        server.totpUsers.put("Olga Smith", true);
+        Browser browser = browser();
+        // LDAP accepts the spelling, but the TOTP secret is looked up by the exact name only
+        Browser.Response response = login(browser, "back=%2Fapp", "olga smith", "pw", TestServer.TOTP_CODE);
+        assertEquals(200, response.status);
+        assertNull(browser.cookies.get("AUTH_TOKEN"));
+    }
+
+    @Test
+    public void securityKeyUserChangesPasswordWithoutTotp() throws Exception {
+        start(null, true);
+        server.user("pete", "pw");
+        server.totpUsers.put("pete", true);
+        enroll("pete", new SoftAuthenticator());
+        server.totpUsers.remove("pete");
+        Browser browser = browser();
+        String csrf = browser.get("/auth?back=%2Fapp").csrf();
+        Browser.Response changed = browser.postForm("/auth/change-password", form(
+                "j_username", "pete", "j_password", "pw", "j_password_new_1", "pw2", "j_password_new_2", "pw2",
+                "j_csrf", csrf, "back", "/app"));
+        assertEquals(303, changed.status);
+        assertEquals("pw2", server.passwords.get("pete"));
+        assertNull(browser.cookies.get("AUTH_TOKEN"));
+    }
+
+    @Test
     public void recoveryOverHttp() throws Exception {
         start(STRICT_POLICY, false);
         server.user("hank", "pw", "cn=admins,ou=groups,dc=example,dc=com");
