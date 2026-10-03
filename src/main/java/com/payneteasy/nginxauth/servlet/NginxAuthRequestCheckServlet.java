@@ -1,6 +1,6 @@
 package com.payneteasy.nginxauth.servlet;
 
-import com.payneteasy.nginxauth.util.CheckCookiesAccess;
+import com.payneteasy.nginxauth.AppContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,17 +16,24 @@ public class NginxAuthRequestCheckServlet extends HttpServlet {
 
     private static final Logger LOG = LoggerFactory.getLogger( NginxAuthRequestCheckServlet.class );
 
-    private final CheckCookiesAccess checkCookiesAccess = new CheckCookiesAccess();
+    private final AccessGate accessGate;
+
+    public NginxAuthRequestCheckServlet(AppContext aApp) {
+        accessGate = new AccessGate(aApp);
+    }
 
     @Override
     protected void service(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         logDebug(aRequest);
 
-        if (checkCookiesAccess.isValidToken(aRequest, aResponse)) {
-            aResponse.setStatus(HttpServletResponse.SC_OK);
-        } else {
-            LOG.warn("Bad token for url {}", aRequest.getRequestURL());
-            aResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        AccessGate.Result result = accessGate.evaluate(aRequest, aResponse, aRequest.getHeader("X-Original-URI"));
+        switch (result.outcome()) {
+            case ALLOW -> aResponse.setStatus(HttpServletResponse.SC_OK);
+            case FORBIDDEN -> aResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            case LOGIN -> {
+                LOG.warn("Bad token for url {}", aRequest.getRequestURL());
+                aResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            }
         }
     }
 }

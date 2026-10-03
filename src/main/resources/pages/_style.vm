@@ -1,8 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Login page</title>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <style type="text/css">
         html {
             background: #fff;
@@ -104,76 +99,12 @@
             color: red;
             margin-bottom: 10px;
         }
+
+        a { color: #2a6db0; }
+        .links { margin-top: 18px; font-size: 12px; }
+        .message { margin-bottom: 18px; font-size: 13px; }
+        .ok { color: #2a7a2a; margin-bottom: 10px; }
+        table.keys { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+        table.keys th, table.keys td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #ccc; font-size: 12px; }
+        .muted { color: #777; font-size: 11px; }
     </style>
-
-    <script type="text/javascript">
-        function startup() {
-            #if ($USERNAME)
-                document.getElementById('j_password').focus();
-            #else
-                document.getElementById('j_username').focus();
-            #end
-        }
-
-        function onButtonSubmit() {
-            document.getElementById('submit-button').disabled = true;
-            document.getElementById('form').submit();
-        }
-    </script>
-</head>
-<body onload="startup()">
-<div class="page">
-
-    <h2>Authentication</h2>
-
-    <form action="/auth/change-password" method="post" id="form">
-
-        <input type="hidden" id="$BACK_URL_NAME" name="$BACK_URL_NAME" value="$BACK_URL_VALUE">
-        <input type="hidden" id="j_nonce" name="j_nonce" value="$!NONCE">
-        #if ( $CSRF )
-        <input type="hidden" name="j_csrf" value="$CSRF">
-        #end
-        #if ( $CTX )
-        <input type="hidden" name="ctx" value="$CTX">
-        #end
-
-        <div class="form-row">
-            <label class='form-label' for="j_username">Username</label>
-            <input class='form-input-text' id="j_username" name="j_username" value="$!USERNAME" maxlength="256">
-        </div>
-
-        <div class="row">
-            <label class='form-label' for="j_password">Current Password</label>
-            <input class='form-input-text' name="j_password" id="j_password" type="password" autocomplete="off" value="" maxlength="1024">
-        </div>
-
-        <div class="row">
-            <label class='form-label' for="j_password_new_1">New Password</label>
-            <input class='form-input-text' name="j_password_new_1" id="j_password" type="password" autocomplete="off" value="" maxlength="1024">
-        </div>
-
-        <div class="row">
-            <label class='form-label' for="j_password_new_2">New Password (repeat)</label>
-            <input class='form-input-text' name="j_password_new_2" id="j_password" type="password" autocomplete="off" value="" maxlength="1024">
-        </div>
-
-
-        #if ( $OTP_ENABLED )
-        <div class="row">
-            <label class='form-label' for="j_code">Verification Code#if ( $WEBAUTHN ) (if you use one)#end</label>
-            <input class='form-input-text-half' name="j_code" id="j_code" type="text" autocomplete="off" value="" maxlength="6">
-        </div>
-        #end
-
-        #if ( $REASON )
-            <div class="reason">$REASON</div>
-        #end
-
-        <div class="button-row">
-            <input type="submit" class="button" id="submit-button" value="Login" onclick="onButtonSubmit()">
-        </div>
-    </form>
-
-</div>
-</body>
-</html>

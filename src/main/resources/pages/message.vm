@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>$TITLE</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+#parse("pages/_style.vm")
+</head>
+<body>
+<div class="page">
+    <h2>$TITLE</h2>
+    <div class="message">$MESSAGE</div>
+    #if ( $LINK )
+    <div class="links"><a href="$LINK">$LINK_TEXT</a></div>
+    #end
+</div>
+</body>
+</html>
