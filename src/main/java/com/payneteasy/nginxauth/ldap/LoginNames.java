@@ -32,7 +32,8 @@ public final class LoginNames {
             }
             sb.append(c);
         }
-        return sb.toString().toLowerCase(Locale.ROOT);
+        // upper then lower approximates full case folding (ß → SS → ss), which toLowerCase alone does not do
+        return sb.toString().toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT);
     }
 
     public static boolean same(String aFirst, String aSecond) {

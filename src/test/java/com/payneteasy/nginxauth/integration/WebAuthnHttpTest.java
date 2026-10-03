@@ -369,6 +369,20 @@ public class WebAuthnHttpTest {
     }
 
     @Test
+    public void otherSpellingCannotSkipTotpOnPasswordChange() throws Exception {
+        start(null, true);
+        server.user("Olga Smith", "pw");
+        server.totpUsers.put("Olga Smith", true);
+        Browser attacker = browser();
+        String csrf = attacker.get("/auth?back=%2Fapp").csrf();
+        Browser.Response response = attacker.postForm("/auth/change-password", form(
+                "j_username", "olga  SMITH", "j_password", "pw", "j_password_new_1", "pw2", "j_password_new_2", "pw2",
+                "j_csrf", csrf, "back", "/app"));
+        assertTrue(response.body.contains("Verification code is empty"));
+        assertEquals("pw", server.passwords.get("Olga Smith"));
+    }
+
+    @Test
     public void recoveryOverHttp() throws Exception {
         start(STRICT_POLICY, false);
         server.user("hank", "pw", "cn=admins,ou=groups,dc=example,dc=com");

@@ -65,6 +65,11 @@ public class OneTimePasswordServiceImpl implements IOneTimePasswordService {
     }
 
     @Override
+    public String resolveSecretName(String aUsername) {
+        return store.resolveName(aUsername);
+    }
+
+    @Override
     public boolean hasSecret(String aUsername) {
         return store.getSecret(aUsername) != null;
     }

@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth.service.impl;
 
+import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.util.SettingsManager;
 import org.apache.commons.codec.binary.Base32;
 import org.slf4j.Logger;
@@ -66,6 +67,32 @@ public class OtpSecretStore {
     public String getSecret(String username) {
         ensureFresh();
         return secrets.get(username);
+    }
+
+    /**
+     * Name under which the secret of this login is stored: the exact name, else the only name that is the
+     * same login as LDAP compares it ({@link LoginNames}). Null when there is none.
+     */
+    public String resolveName(String username) {
+        ensureFresh();
+        Map<String, String> current = secrets;
+        if (username == null) {
+            return null;
+        }
+        if (current.containsKey(username)) {
+            return username;
+        }
+        String found = null;
+        for (String name : current.keySet()) {
+            if (LoginNames.same(name, username)) {
+                if (found != null) {
+                    // two spellings of one login in the file: still a TOTP user, pick deterministically
+                    return found.compareTo(name) <= 0 ? found : name;
+                }
+                found = name;
+            }
+        }
+        return found;
     }
 
     public String dummySecret() {

@@ -14,6 +14,7 @@ public class LoginNamesTest {
         assertTrue(LoginNames.same("Olga Smith", "olga  smith"));
         assertTrue(LoginNames.same("Olga Smith", "olga smith"));
         assertTrue(LoginNames.same("ＡＬＩＣＥ", "alice"));
+        assertTrue(LoginNames.same("Straße", "STRASSE"));
         assertFalse(LoginNames.same("olga smith", "olgasmith"));
         assertFalse(LoginNames.same(null, "x"));
     }

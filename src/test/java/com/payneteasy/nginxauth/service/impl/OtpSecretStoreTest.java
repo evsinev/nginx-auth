@@ -82,4 +82,12 @@ public class OtpSecretStoreTest {
                 System::currentTimeMillis
         ).dummySecret());
     }
+
+    @Test
+    public void resolvesSpellingsOfOneLogin() {
+        OtpSecretStore store = new OtpSecretStore(java.util.Map.of("Olga Smith", "SECRET"), "DUMMY");
+        org.junit.Assert.assertEquals("Olga Smith", store.resolveName("Olga Smith"));
+        org.junit.Assert.assertEquals("Olga Smith", store.resolveName("olga   smith"));
+        org.junit.Assert.assertNull(store.resolveName("olgasmith"));
+    }
 }

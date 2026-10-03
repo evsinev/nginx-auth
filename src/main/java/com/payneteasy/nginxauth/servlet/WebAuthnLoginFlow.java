@@ -2,6 +2,7 @@ package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.AppContext;
 import com.payneteasy.nginxauth.ldap.LdapPrincipal;
+import com.payneteasy.nginxauth.ldap.LoginNames;
 import com.payneteasy.nginxauth.policy.AccessChecker;
 import com.payneteasy.nginxauth.policy.EffectivePolicy;
 import com.payneteasy.nginxauth.policy.PolicySet;
@@ -117,7 +118,10 @@ final class WebAuthnLoginFlow {
         }
         boolean codeProvided = app.otpEnabled() && StringUtils.hasText(otp);
 
-        RateLimiter.Attempt attempt = LoginAttempts.begin(aRequest, username);
+        // spellings LDAP treats as one login share the failure counter and the TOTP secret
+        RateLimiter.Attempt attempt = LoginAttempts.begin(aRequest, LoginNames.normalize(username));
+        String otpName = app.otpEnabled() ? app.otpService().resolveSecretName(username) : null;
+        String otpUser = otpName != null ? otpName : username;
         attempt.awaitDelay();
         if (attempt.denied()) {
             LOG.warn("Login throttled [user:{}]", username);
@@ -146,11 +150,11 @@ final class WebAuthnLoginFlow {
                     app.authService().authenticate(username, password, false);
                 }
                 if (codeProvided) {
-                    if (!app.otpService().checkCode(username, parseCode(otp))) {
+                    if (!app.otpService().checkCode(otpUser, parseCode(otp))) {
                         throw new AuthenticationException("Authentication failed");
                     }
                     totpVerified = true;
-                } else if (app.otpEnabled() && app.otpService().hasSecret(username)) {
+                } else if (otpName != null) {
                     web.changePasswordForm(aResponse, state, back, contextId, username, "Verification code is empty");
                     return;
                 }
@@ -217,7 +221,7 @@ final class WebAuthnLoginFlow {
                 form(aResponse, false, state, back, contextId, username, "Access denied by policy");
             }
             case TOTP -> {
-                if (!totpVerified && !app.otpService().checkCode(username, parseCode(otp))) {
+                if (!totpVerified && !app.otpService().checkCode(otpUser, parseCode(otp))) {
                     attempt.failed();
                     LOG.warn("User {} OTP verification failed", username);
                     form(aResponse, aChangePassword, state, back, contextId, username, "Authentication failed");

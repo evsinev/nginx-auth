@@ -95,10 +95,20 @@ final class TestServer implements AutoCloseable {
         }
     }
 
+    /** Like LDAP: spellings of one login select the same entry. */
+    String entry(String aTyped) {
+        for (String name : passwords.keySet()) {
+            if (com.payneteasy.nginxauth.ldap.LoginNames.same(name, aTyped)) {
+                return name;
+            }
+        }
+        return aTyped;
+    }
+
     private final class FakeAuth implements IAuthService {
 
         private void check(String aUsername, String aPassword) throws AuthenticationException {
-            if (aPassword == null || !aPassword.equals(passwords.get(aUsername))) {
+            if (aPassword == null || !aPassword.equals(passwords.get(entry(aUsername)))) {
                 throw new AuthenticationException("Authentication failed");
             }
         }
@@ -114,7 +124,7 @@ final class TestServer implements AutoCloseable {
         @Override
         public void authenticate(String aUsername, String aPassword, boolean aCanCheckAccess) throws AuthenticationException, UserMustChangePasswordException {
             check(aUsername, aPassword);
-            if (aCanCheckAccess && Boolean.TRUE.equals(mustChange.get(aUsername))) {
+            if (aCanCheckAccess && Boolean.TRUE.equals(mustChange.get(entry(aUsername)))) {
                 throw new UserMustChangePasswordException();
             }
         }
@@ -122,20 +132,22 @@ final class TestServer implements AutoCloseable {
         @Override
         public LdapPrincipal authenticatePrincipal(String aUsername, String aPassword) throws AuthenticationException, UserMustChangePasswordException {
             check(aUsername, aPassword);
-            if (Boolean.TRUE.equals(mustChange.get(aUsername))) {
+            String entry = entry(aUsername);
+            if (Boolean.TRUE.equals(mustChange.get(entry))) {
                 throw new UserMustChangePasswordException();
             }
-            String uid = uids.getOrDefault(aUsername, aUsername);
-            return new LdapPrincipal(uid, uid, groups.getOrDefault(aUsername, List.of()), System.currentTimeMillis(), aUsername);
+            String uid = uids.getOrDefault(entry, entry);
+            return new LdapPrincipal(uid, uid, groups.getOrDefault(entry, List.of()), System.currentTimeMillis(), aUsername);
         }
 
         @Override
         public void changePassword(String aUsername, String aCurrentPassword, String aNewPassword) throws AuthenticationException {
             check(aUsername, aCurrentPassword);
-            passwords.put(aUsername, aNewPassword);
-            mustChange.remove(aUsername);
+            String entry = entry(aUsername);
+            passwords.put(entry, aNewPassword);
+            mustChange.remove(entry);
             if (failPrincipalAfterChange) {
-                passwords.put(aUsername, aNewPassword + "-unreadable");
+                passwords.put(entry, aNewPassword + "-unreadable");
             }
         }
     }
@@ -153,6 +165,16 @@ final class TestServer implements AutoCloseable {
         @Override
         public boolean hasSecret(String aUsername) {
             return Boolean.TRUE.equals(totpUsers.get(aUsername));
+        }
+
+        @Override
+        public String resolveSecretName(String aUsername) {
+            for (String name : totpUsers.keySet()) {
+                if (com.payneteasy.nginxauth.ldap.LoginNames.same(name, aUsername)) {
+                    return name;
+                }
+            }
+            return null;
         }
     }
 }
