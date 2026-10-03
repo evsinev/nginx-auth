@@ -153,6 +153,8 @@ final class WebAuthnLoginFlow {
                 }
                 LOG.warn("User {} changed password", username);
                 principal = app.authService().authenticatePrincipal(username, newPassword);
+                // a token stolen before the change must not outlive it
+                webauthn.service().revokeSessions(principal.getCanonicalUid());
             } else {
                 principal = app.authService().authenticatePrincipal(username, password);
             }
@@ -229,7 +231,7 @@ final class WebAuthnLoginFlow {
         webauthn.states().clearPreAuth(aState, null);
         webauthn.transactions().cancelForBinding(aState.binding());
         String token = app.tokens().createSession(Session.withoutWebAuthn(aPrincipal.getCanonicalUid(), aPrincipal.getDisplayName(),
-                aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()));
+                aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).boundTo(aState.binding()));
         Audit.log("authentication_succeeded", "uid", aPrincipal.getCanonicalUid(), "method", aMethod.name(), "policyId", aPolicyId);
         WebAuthnWeb.issueSessionCookie(aRequest, aResponse, token);
         aResponse.sendRedirect(aBack);

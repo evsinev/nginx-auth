@@ -337,6 +337,80 @@ public class WebAuthnServiceTest {
         assertEquals(0L, f.repository.find("alice").orElseThrow().credentials().get(0).lastUsedAt());
     }
 
+    // ------------------------------------------------------------- logout
+
+    @Test
+    public void logoutAfterStepUpPublishedRevokesTheNewToken() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        String oldToken = f.totpSession("alice", List.of());
+        BrowserState state = f.browser();
+        Ceremony ceremony = f.service.startStepUp(state, ORIGIN, oldToken, null);
+        SessionIssued issued = (SessionIssued) f.service.finish(state, ORIGIN, oldToken, "step_up", ceremony.transactionId(),
+                key.get(ceremony.publicKeyJson(), ORIGIN), null);
+        // the logout request still carries the old cookie: the browser has not applied the new one yet
+        f.service.logout(state, oldToken);
+        assertFalse(f.tokens.peekSession(issued.token()).isPresent());
+    }
+
+    @Test
+    public void logoutWithoutCookieRevokesLoginPublishedInThisBrowser() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        String otherDevice = f.login("alice", key);
+
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        SessionIssued issued = (SessionIssued) f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(),
+                key.get(ceremony.publicKeyJson(), ORIGIN), null);
+        f.service.logout(state, null);
+        assertFalse(f.tokens.peekSession(issued.token()).isPresent());
+        // other browsers of the same user keep their sessions
+        assertTrue(f.tokens.peekSession(otherDevice).isPresent());
+    }
+
+    @Test
+    public void concurrentLogoutDuringLoginCommitLeavesNoSession() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+
+        java.util.concurrent.CountDownLatch inCommit = new java.util.concurrent.CountDownLatch(1);
+        f.service.beforeCommitHook = () -> {
+            inCommit.countDown();
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread logout = new Thread(() -> {
+            try {
+                inCommit.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            f.service.logout(state, null);
+        });
+        logout.start();
+        String[] token = new String[1];
+        try {
+            token[0] = ((SessionIssued) f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null)).token();
+        } catch (WebAuthnException e) {
+            assertEquals("preauth_changed", e.reason());
+        }
+        logout.join();
+        if (token[0] != null) {
+            assertFalse(f.tokens.peekSession(token[0]).isPresent());
+        }
+        assertNull(state.preAuth());
+    }
+
     // ------------------------------------------------------------- bootstrap race
 
     @Test

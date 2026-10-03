@@ -28,4 +28,6 @@ public interface ITokenManager {
 
     void invalidateByCredential(String aCanonicalUid, String aCredentialId);
 
+    void invalidateByBrowserBinding(String aBrowserBinding);
+
 }

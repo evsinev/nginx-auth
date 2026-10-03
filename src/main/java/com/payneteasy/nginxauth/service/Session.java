@@ -17,9 +17,11 @@ public final class Session {
     private final String               credentialId;
     private final boolean              userVerified;
     private final boolean              backupEligible;
+    private final String               browserBinding;
 
     private Session(String canonicalUid, String displayName, List<String> groups, AuthenticationMethod method,
-                    long ldapAuthTime, long webauthnAuthTime, String credentialId, boolean userVerified, boolean backupEligible) {
+                    long ldapAuthTime, long webauthnAuthTime, String credentialId, boolean userVerified, boolean backupEligible,
+                    String browserBinding) {
         this.canonicalUid     = canonicalUid;
         this.displayName      = displayName;
         this.groups           = groups == null ? Collections.emptyList() : List.copyOf(groups);
@@ -29,13 +31,14 @@ public final class Session {
         this.credentialId     = credentialId;
         this.userVerified     = userVerified;
         this.backupEligible   = backupEligible;
+        this.browserBinding   = browserBinding;
     }
 
     public static Session withoutWebAuthn(String uid, String displayName, List<String> groups, AuthenticationMethod method, long ldapAuthTime) {
         if (method == AuthenticationMethod.LDAP_WEBAUTHN) {
             throw new IllegalArgumentException("Use withWebAuthn for LDAP_WEBAUTHN sessions");
         }
-        return new Session(uid, displayName, groups, method, ldapAuthTime, 0L, null, false, false);
+        return new Session(uid, displayName, groups, method, ldapAuthTime, 0L, null, false, false, null);
     }
 
     public static Session withWebAuthn(String uid, String displayName, List<String> groups, long ldapAuthTime,
@@ -44,7 +47,7 @@ public final class Session {
             throw new IllegalArgumentException("credentialId is required");
         }
         return new Session(uid, displayName, groups, AuthenticationMethod.LDAP_WEBAUTHN, ldapAuthTime, webauthnAuthTime,
-                credentialId, userVerified, backupEligible);
+                credentialId, userVerified, backupEligible, null);
     }
 
     public String getCanonicalUid() {
@@ -81,5 +84,15 @@ public final class Session {
 
     public boolean isBackupEligible() {
         return backupEligible;
+    }
+
+    /** Browser binding the session was issued in, or null outside WebAuthn mode. */
+    public String getBrowserBinding() {
+        return browserBinding;
+    }
+
+    public Session boundTo(String aBrowserBinding) {
+        return new Session(canonicalUid, displayName, groups, method, ldapAuthTime, webauthnAuthTime, credentialId,
+                userVerified, backupEligible, aBrowserBinding);
     }
 }

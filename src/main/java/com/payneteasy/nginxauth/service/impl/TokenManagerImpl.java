@@ -113,6 +113,14 @@ public class TokenManagerImpl implements ITokenManager {
         removeIf(session -> aCanonicalUid.equals(session.getCanonicalUid()) && aCredentialId.equals(session.getCredentialId()));
     }
 
+    @Override
+    public void invalidateByBrowserBinding(String aBrowserBinding) {
+        if (aBrowserBinding == null) {
+            return;
+        }
+        removeIf(session -> aBrowserBinding.equals(session.getBrowserBinding()));
+    }
+
     int size() {
         theLock.readLock().lock();
         try {

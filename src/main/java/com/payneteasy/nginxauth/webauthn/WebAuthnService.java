@@ -430,7 +430,7 @@ public final class WebAuthnService {
         switch (aTx.purpose()) {
             case LOGIN -> {
                 String token = tokens.createSession(Session.withWebAuthn(uid, aTx.displayName(), aTx.groups(), aTx.ldapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()));
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()));
                 states.clearPreAuth(aState, aTx.preauthId());
                 Audit.log("authentication_succeeded", "uid", uid, "cred", Audit.cred(aCredentialId), "purpose", "login",
                         "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -438,7 +438,7 @@ public final class WebAuthnService {
             }
             case STEP_UP -> {
                 Session next = Session.withWebAuthn(uid, source.getDisplayName(), source.getGroups(), source.getLdapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible());
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding());
                 String token = tokens.replaceIfActive(aTx.sourceSessionId(), next)
                         .orElseThrow(() -> new WebAuthnException("session_gone", "Your session has ended. Please log in again."));
                 Audit.log("step_up", "uid", uid, "cred", Audit.cred(aCredentialId), "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -555,6 +555,44 @@ public final class WebAuthnService {
             return new NextCeremony(startLogin(aState, aTx.expectedOrigin()));
         }
         return new Done("Security key registered.");
+    }
+
+    // ------------------------------------------------------------------ logout
+
+    /**
+     * Ends everything this browser holds: the session from its cookie, every session issued in this browser
+     * binding (a login or step-up that finished concurrently may have published one the cookie does not show
+     * yet), the pending pre-authentication and transaction. Takes the same locks in the same order as a commit
+     * (lock(uid), then the browser state monitor), so an in-flight finish either fails or is revoked here.
+     */
+    public void logout(BrowserState aState, String aSessionToken) {
+        Optional<Session> session = tokens.peekSession(aSessionToken);
+        Runnable revoke = () -> {
+            synchronized (aState) {
+                tokens.invalidateToken(aSessionToken);
+                tokens.invalidateByBrowserBinding(aState.binding());
+                states.clearPreAuth(aState, null);
+                transactions.cancelForBinding(aState.binding());
+            }
+        };
+        if (session.isPresent()) {
+            repository.locks().withLock(session.get().getCanonicalUid(), () -> {
+                revoke.run();
+                return null;
+            });
+        } else {
+            revoke.run();
+        }
+        Audit.log("logout", "uid", session.map(Session::getCanonicalUid).orElse(null));
+    }
+
+    /** Revokes every session of the user, e.g. after a password change. */
+    public void revokeSessions(String aUid) {
+        repository.locks().withLock(aUid, () -> {
+            tokens.invalidateUser(aUid);
+            return null;
+        });
+        Audit.log("sessions_revoked", "uid", aUid, "reason", "password_changed");
     }
 
     // ------------------------------------------------------------------ admin

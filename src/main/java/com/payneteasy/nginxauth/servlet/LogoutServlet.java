@@ -2,7 +2,6 @@ package com.payneteasy.nginxauth.servlet;
 
 import com.payneteasy.nginxauth.AppContext;
 import com.payneteasy.nginxauth.service.ITokenManager;
-import com.payneteasy.nginxauth.service.Session;
 import com.payneteasy.nginxauth.util.CookiesManager;
 import com.payneteasy.nginxauth.util.HttpRequestUtil;
 import com.payneteasy.nginxauth.util.SettingsManager;
@@ -50,8 +49,8 @@ public class LogoutServlet extends HttpServlet {
                 web.message(aResponse, HttpServletResponse.SC_FORBIDDEN, "Request rejected", "Please use the logout button.", WebAuthnWeb.AUTH_URL + "/logout", "Logout");
                 return;
             }
-            web.webauthn().states().clearPreAuth(state.get(), null);
-            web.webauthn().transactions().cancelForBinding(state.get().binding());
+            String token = new CookiesManager(aRequest, aResponse).getCookieValue(SettingsManager.getTokenCookieName());
+            web.webauthn().service().logout(state.get(), token);
         }
         logout(aRequest, aResponse);
     }
@@ -62,16 +61,7 @@ public class LogoutServlet extends HttpServlet {
 
         CookiesManager cookies = new CookiesManager(aRequest, aResponse);
         String token = cookies.getCookieValue(SettingsManager.getTokenCookieName());
-        Optional<Session> session = tokenManager.peekSession(token);
-        if (web != null && session.isPresent()) {
-            // same lock as ceremony commits, so a logout cannot slip between their check and publication
-            web.webauthn().repository().locks().withLock(session.get().getCanonicalUid(), () -> {
-                tokenManager.invalidateToken(token);
-                return null;
-            });
-        } else {
-            tokenManager.invalidateToken(token);
-        }
+        tokenManager.invalidateToken(token);
         cookies.clear();
 
         VelocityBuilder velocity = new VelocityBuilder();
