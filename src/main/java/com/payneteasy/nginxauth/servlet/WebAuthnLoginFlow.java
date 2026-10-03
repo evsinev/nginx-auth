@@ -170,11 +170,7 @@ final class WebAuthnLoginFlow {
                     web.loginForm(aResponse, state, back, contextId, username, "Password changed. Please log in with the new password.");
                     return;
                 }
-                if (!principal.getCanonicalUid().equals(knownUid)) {
-                    // uid becomes readable only now (expired password): end its sessions too; the bump is ours,
-                    // so take the new generation for this request
-                    loginGeneration = webauthn.service().revokeAfterPasswordChange(principal.getCanonicalUid(), username);
-                }
+
             } else {
                 principal = app.authService().authenticatePrincipal(username, password);
             }
@@ -251,7 +247,7 @@ final class WebAuthnLoginFlow {
     private void issue(HttpServletRequest aRequest, HttpServletResponse aResponse, BrowserState aState, long aGeneration,
                        long aLoginGeneration, LdapPrincipal aPrincipal, AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
         Optional<String> issued = webauthn.service().issueSession(aState, aGeneration, Session.withoutWebAuthn(aPrincipal.getCanonicalUid(),
-                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).withLoginName(aPrincipal.getLoginName()), aLoginGeneration);
+                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).withLogin(aPrincipal.getLoginName(), aLoginGeneration));
         if (issued.isEmpty()) {
             web.loginForm(aResponse, aState, aBack, null, null, "Your login was interrupted. Please log in again.");
             return;

@@ -426,10 +426,9 @@ public class WebAuthnServiceTest {
         com.payneteasy.nginxauth.ldap.LdapPrincipal principal =
                 new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get() + 10_000L, "alice");
         assertFalse(f.service.beginPreAuth(racing, racing.generation(), PreAuth.create(principal, "none", "/", before)));
-        Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 10_000L)
-                .withLoginName("alice");
-        assertFalse(f.service.issueSession(racing, racing.generation(), session, before).isPresent());
-        assertTrue(f.service.issueSession(racing, racing.generation(), session, f.service.loginGeneration("alice")).isPresent());
+        Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 10_000L);
+        assertFalse(f.service.issueSession(racing, racing.generation(), session.withLogin("alice", before)).isPresent());
+        assertTrue(f.service.issueSession(racing, racing.generation(), session.withLogin("alice", f.service.loginGeneration("alice"))).isPresent());
     }
 
     @Test
@@ -450,12 +449,58 @@ public class WebAuthnServiceTest {
     }
 
     @Test
+    public void recoveryKeyIsNotSavedAfterPasswordChange() throws Exception {
+        f = new WebAuthnFixture();
+        String secret = f.service.adminIssueGrant("alice", new WebAuthnService.GrantSpec(24, 1, "test"));
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        assertTrue(f.service.verifyRecoverySecret(state, secret));
+        Ceremony create = f.service.startRecoveryEnroll(state, ORIGIN);
+        String response = new SoftAuthenticator().create(create.publicKeyJson(), ORIGIN);
+        // the password changes after the commit re-checks passed
+        f.service.afterCheckHook = () -> f.service.revokeAfterPasswordChange(null, "alice");
+        try {
+            f.service.finish(state, ORIGIN, null, "recovery_enroll", create.transactionId(), response, null);
+            fail("key must not be saved after the password change");
+        } catch (WebAuthnException e) {
+            assertTrue(e.reason(), e.reason().equals("password_changed") || e.reason().equals("preauth_changed"));
+        }
+        UserRecord record = f.repository.find("alice").orElseThrow();
+        assertTrue(record.credentials().isEmpty());
+        assertEquals(1, record.enrollmentGrant().usesLeft());
+    }
+
+    @Test
+    public void sessionOperationsStopOnceThePasswordChanged() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.browser();
+        String token = f.tokens.createSession(Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
+                .withLogin("alice", f.service.loginGeneration("alice")));
+        Ceremony ceremony = f.service.startDelete(state, ORIGIN, token, key.credentialId(), true);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.service.afterCheckHook = () -> f.service.revokeAfterPasswordChange(null, "alice");
+        try {
+            f.service.finish(state, ORIGIN, token, "delete_credential", ceremony.transactionId(), response, null);
+            fail("deletion must not be committed after the password change");
+        } catch (WebAuthnException e) {
+            assertTrue(e.reason(), e.reason().equals("password_changed") || e.reason().equals("session_gone"));
+        }
+        assertEquals(1, f.repository.find("alice").orElseThrow().credentials().size());
+
+        Session stale = Session.withoutWebAuthn("bob", "bob", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get()).withLogin("bob", 0L);
+        assertTrue(f.service.isCurrent(stale));
+        f.service.revokeAfterPasswordChange(null, "BOB");
+        assertFalse(f.service.isCurrent(stale));
+    }
+
+    @Test
     public void passwordChangeRevokesSessionPublishedJustBefore() throws Exception {
         f = new WebAuthnFixture();
         BrowserState state = f.browser();
         long before = f.service.loginGeneration("bob");
-        Session session = Session.withoutWebAuthn("bob", "bob", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get()).withLoginName("Bob");
-        String token = f.service.issueSession(state, state.generation(), session, before).orElseThrow();
+        Session session = Session.withoutWebAuthn("bob", "bob", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get()).withLogin("Bob", before);
+        String token = f.service.issueSession(state, state.generation(), session).orElseThrow();
         f.service.revokeAfterPasswordChange(null, "bob");
         assertFalse(f.tokens.peekSession(token).isPresent());
     }
@@ -467,11 +512,11 @@ public class WebAuthnServiceTest {
         long generation = state.generation();
         f.service.logout(state, null);
         Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get());
-        assertFalse(f.service.issueSession(state, generation, session, 0L).isPresent());
+        assertFalse(f.service.issueSession(state, generation, session).isPresent());
         PreAuth pre = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get()), "none", "/", 0L);
         assertFalse(f.service.beginPreAuth(state, generation, pre));
         assertNull(state.preAuth());
-        assertTrue(f.service.issueSession(state, state.generation(), session, 0L).isPresent());
+        assertTrue(f.service.issueSession(state, state.generation(), session).isPresent());
     }
 
     // ------------------------------------------------------------- bootstrap race

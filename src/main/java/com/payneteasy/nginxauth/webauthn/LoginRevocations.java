@@ -1,8 +1,9 @@
 package com.payneteasy.nginxauth.webauthn;
 
 import java.util.Locale;
+import com.payneteasy.nginxauth.webauthn.storage.UserLocks;
+
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 
 /**
  * Revocation generation per login name (the typed name that selects the bind DN, case-insensitive).
@@ -40,14 +41,17 @@ public final class LoginRevocations {
         }
     }
 
-    /** Runs the publication only if the generation still equals the one read before the bind; else null. */
-    public <T> T publishIf(String aLoginName, long aExpected, Supplier<T> aPublish) {
+    /**
+     * Runs the action (state change and publication) only if the generation still equals the one read before
+     * the bind; returns null otherwise. A bump waits for a running action.
+     */
+    public <T, E extends Exception> T publishIf(String aLoginName, long aExpected, UserLocks.Action<T, E> aAction) throws E {
         if (aLoginName == null) {
-            return aPublish.get();
+            return aAction.run();
         }
         Generation generation = generations.computeIfAbsent(key(aLoginName), k -> new Generation());
         synchronized (generation) {
-            return generation.value == aExpected ? aPublish.get() : null;
+            return generation.value == aExpected ? aAction.run() : null;
         }
     }
 

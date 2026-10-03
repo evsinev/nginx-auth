@@ -19,7 +19,7 @@ public final class TransactionStore {
         clock = aClock;
     }
 
-    public boolean put(Transaction aTransaction) {
+    public synchronized boolean put(Transaction aTransaction) {
         long now = clock.getAsLong();
         if (transactions.size() >= cap) {
             transactions.values().removeIf(tx -> tx.expiresAt() <= now);
@@ -55,12 +55,12 @@ public final class TransactionStore {
         return Optional.of(tx);
     }
 
-    public void cancelForUser(String aUid) {
+    public synchronized void cancelForUser(String aUid) {
         transactions.values().removeIf(tx -> tx.uid().equals(aUid));
         byBinding.values().removeIf(id -> !transactions.containsKey(id));
     }
 
-    public void cancelForBinding(String aBinding) {
+    public synchronized void cancelForBinding(String aBinding) {
         String id = byBinding.remove(aBinding);
         if (id != null) {
             transactions.remove(id);

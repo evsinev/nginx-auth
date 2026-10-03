@@ -63,7 +63,7 @@ public class TokenManagerImplTest {
     public void invalidateByLoginNameIgnoresCase() {
         TokenManagerImpl manager = new TokenManagerImpl(15 * 60 * 1000L, System::currentTimeMillis);
         String token = manager.createSession(com.payneteasy.nginxauth.service.Session.withoutWebAuthn("osmith", "Olga",
-                java.util.List.of(), com.payneteasy.nginxauth.service.AuthenticationMethod.LDAP_TOTP, 1L).withLoginName("Olga Smith"));
+                java.util.List.of(), com.payneteasy.nginxauth.service.AuthenticationMethod.LDAP_TOTP, 1L).withLogin("Olga Smith", 0L));
         String other = manager.createToken("bob");
         manager.invalidateByLoginName("olga smith");
         assertFalse(manager.validateToken(token));

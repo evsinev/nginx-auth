@@ -59,7 +59,7 @@ final class AccessGate {
             policyId = PolicySet.NONE_POLICY_ID;
         }
 
-        Optional<Session> session = app.tokens().getSession(token);
+        Optional<Session> session = app.tokens().getSession(token).filter(webauthn.service()::isCurrent);
         if (session.isPresent()) {
             AccessChecker.Decision decision = webauthn.accessChecker().check(session.get(), policyId);
             if (decision == AccessChecker.Decision.ALLOW) {

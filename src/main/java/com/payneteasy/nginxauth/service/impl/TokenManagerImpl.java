@@ -39,7 +39,7 @@ public class TokenManagerImpl implements ITokenManager {
     @Override
     public String createToken(String username) {
         return createSession(Session.withoutWebAuthn(username, username, Collections.emptyList(), AuthenticationMethod.LDAP_ONLY, clock.getAsLong())
-                .withLoginName(username));
+                .withLogin(username, 0L));
     }
 
     @Override
