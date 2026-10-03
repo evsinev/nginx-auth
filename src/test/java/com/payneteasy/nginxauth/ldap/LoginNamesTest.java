@@ -18,6 +18,12 @@ public class LoginNamesTest {
         assertTrue(LoginNames.same("Straße", "STRASSE"));
         assertTrue(LoginNames.same("ſam", "SAM"));
         assertTrue(LoginNames.same("ὀδυσσεύς", "ὈΔΥΣΣΕΎΣ"));
+        // RFC 4518 §2.2 map: removed and space-mapped code points
+        assertTrue(LoginNames.same("Alice", "Al\u00ADice"));
+        assertTrue(LoginNames.same("Alice", "Al\u200Bice"));
+        assertTrue(LoginNames.same("ab", "a\u001Cb"));
+        assertTrue(LoginNames.same("a b", "a\u2003b"));
+        assertFalse(LoginNames.same("a b", "ab"));
         // distinct LDAP logins never merge
         assertFalse(LoginNames.same("ıpek", "ipek"));
         assertFalse(LoginNames.same("ıPEK", "ipek"));

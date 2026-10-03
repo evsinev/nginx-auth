@@ -504,6 +504,16 @@ public class WebAuthnServiceTest {
     }
 
     @Test
+    public void invisibleCharactersDoNotEscapeRevocation() throws Exception {
+        f = new WebAuthnFixture();
+        Session alice = Session.withoutWebAuthn("alice", "Alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get()).withLogin("Alice", 0L);
+        String token = f.tokens.createSession(alice);
+        f.service.revokeAfterPasswordChange(null, "Al\u00ADice");
+        assertFalse(f.tokens.peekSession(token).isPresent());
+        assertFalse(f.service.isCurrent(alice));
+    }
+
+    @Test
     public void uidCleanupKeepsLoginsWithTheNewPassword() throws Exception {
         f = new WebAuthnFixture();
         String stolen = f.tokens.createSession(Session.withoutWebAuthn("osmith", "Olga", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get())
