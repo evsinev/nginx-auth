@@ -95,8 +95,7 @@ public final class WebAuthnService {
     private final RelyingParties                relyingParties;
     private final LongSupplier                  clock;
     private final ConcurrentHashMap<String, Long> resetEpochs = new ConcurrentHashMap<>();
-    /** uid → time of the last password-change revocation; LDAP checks older than this publish nothing. */
-    private final ConcurrentHashMap<String, Long> revokedAt   = new ConcurrentHashMap<>();
+    private final LoginRevocations                loginRevocations = new LoginRevocations();
 
     /** Test hook: runs inside lock(uid) right before a ceremony result is committed. */
     volatile Runnable beforeCommitHook = () -> { };
@@ -388,15 +387,10 @@ public final class WebAuthnService {
             if (now - aTx.ldapAuthTime() > config.getPreauthTtlMillis()) {
                 throw new WebAuthnException("preauth_expired", "Your login has expired. Please enter your password again.");
             }
-            if (isRevoked(aTx.uid(), aTx.ldapAuthTime())) {
+            if (loginRevocations.current(pre.loginName()) != pre.loginGeneration()) {
                 throw new WebAuthnException("password_changed", "Your password was changed. Please log in again.");
             }
         }
-    }
-
-    private boolean isRevoked(String aUid, long aLdapAuthTime) {
-        Long revoked = revokedAt.get(aUid);
-        return revoked != null && aLdapAuthTime < revoked;
     }
 
     private FinishResult commitAssertion(BrowserState aState, Transaction aTx, String aCredentialId, boolean aBe, boolean aBs,
@@ -445,9 +439,13 @@ public final class WebAuthnService {
         switch (aTx.purpose()) {
             case LOGIN -> {
                 // checkCommit verified under this monitor that the pre-auth is the transaction's one
-                String loginName = aState.preAuth().principal().getLoginName();
-                String token = tokens.createSession(Session.withWebAuthn(uid, aTx.displayName(), aTx.groups(), aTx.ldapAuthTime(), now,
-                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLoginName(loginName));
+                PreAuth pre = aState.preAuth();
+                Session session = Session.withWebAuthn(uid, aTx.displayName(), aTx.groups(), aTx.ldapAuthTime(), now,
+                        aCredentialId, aUv, stored.backupEligible()).boundTo(aTx.binding()).withLoginName(pre.loginName());
+                String token = loginRevocations.publishIf(pre.loginName(), pre.loginGeneration(), () -> tokens.createSession(session));
+                if (token == null) {
+                    throw new WebAuthnException("password_changed", "Your password was changed. Please log in again.");
+                }
                 states.clearPreAuth(aState, aTx.preauthId());
                 Audit.log("authentication_succeeded", "uid", uid, "cred", Audit.cred(aCredentialId), "purpose", "login",
                         "policyId", aTx.policyId(), "origin", aTx.expectedOrigin());
@@ -608,50 +606,63 @@ public final class WebAuthnService {
      * Publishes a session created without a ceremony (LDAP_ONLY, LDAP_TOTP) unless this browser logged out
      * after the request started.
      */
-    public Optional<String> issueSession(BrowserState aState, long aGeneration, Session aSession) {
+    public Optional<String> issueSession(BrowserState aState, long aGeneration, Session aSession, long aLoginGeneration) {
         return repository.locks().withLock(aSession.getCanonicalUid(), () -> {
             synchronized (aState) {
-                if (aState.generation() != aGeneration || isRevoked(aSession.getCanonicalUid(), aSession.getLdapAuthTime())) {
+                if (aState.generation() != aGeneration) {
                     return Optional.<String>empty();
                 }
-                states.clearPreAuth(aState, null);
-                transactions.cancelForBinding(aState.binding());
-                return Optional.of(tokens.createSession(aSession.boundTo(aState.binding())));
+                return Optional.ofNullable(loginRevocations.publishIf(aSession.getLoginName(), aLoginGeneration, () -> {
+                    states.clearPreAuth(aState, null);
+                    transactions.cancelForBinding(aState.binding());
+                    return tokens.createSession(aSession.boundTo(aState.binding()));
+                }));
             }
         });
+    }
+
+    /** Read before the LDAP bind of a login request. */
+    public long loginGeneration(String aLoginName) {
+        return loginRevocations.current(aLoginName);
     }
 
     /** Starts the second step after the password unless this browser logged out after the request started. */
     public boolean beginPreAuth(BrowserState aState, long aGeneration, PreAuth aPreAuth) {
         return repository.locks().withLock(aPreAuth.uid(), () -> {
             synchronized (aState) {
-                if (aState.generation() != aGeneration || isRevoked(aPreAuth.uid(), aPreAuth.ldapAuthTime())) {
+                if (aState.generation() != aGeneration) {
                     return false;
                 }
-                transactions.cancelForBinding(aState.binding());
-                states.setPreAuth(aState, aPreAuth);
-                return true;
+                return Boolean.TRUE.equals(loginRevocations.publishIf(aPreAuth.loginName(), aPreAuth.loginGeneration(), () -> {
+                    transactions.cancelForBinding(aState.binding());
+                    states.setPreAuth(aState, aPreAuth);
+                    return Boolean.TRUE;
+                }));
             }
         });
     }
 
     /**
-     * After a password change: revokes every session of the directory entry (by canonical uid when known and
-     * by the login name that selected the bind DN), pending pre-authentications and transactions, and makes
-     * every LDAP check done before now unable to publish a session.
+     * After a password change: revokes every session of the directory entry (by the login name that selected
+     * the bind DN, and by canonical uid when known), pending pre-authentications and transactions, and makes
+     * every login request that read the generation before this call unable to publish. Returns the new
+     * generation for the request that changed the password.
      */
-    public void revokeAfterPasswordChange(String aUid, String aLoginName) {
+    public long revokeAfterPasswordChange(String aUid, String aLoginName) {
+        // bump first: anything published after this is refused, anything published before is revoked below
+        long generation = loginRevocations.bump(aLoginName);
+        tokens.invalidateByLoginName(aLoginName);
+        states.clearPreAuthForLogin(aLoginName);
         if (aUid != null) {
             repository.locks().withLock(aUid, () -> {
-                revokedAt.merge(aUid, clock.getAsLong(), Math::max);
                 tokens.invalidateUser(aUid);
                 transactions.cancelForUser(aUid);
                 return null;
             });
             states.clearPreAuthForUser(aUid);
         }
-        tokens.invalidateByLoginName(aLoginName);
         Audit.log("sessions_revoked", "uid", aUid, "reason", "password_changed");
+        return generation;
     }
 
     // ------------------------------------------------------------------ admin

@@ -77,7 +77,8 @@ public final class WebAuthnFixture {
     }
 
     public PreAuth ldapLogin(BrowserState aState, String aUid, List<String> aGroups, String aPolicyId) {
-        PreAuth pre = PreAuth.create(new LdapPrincipal(aUid, aUid + " name", aGroups, now.get()), aPolicyId, "/back");
+        PreAuth pre = PreAuth.create(new LdapPrincipal(aUid, aUid + " name", aGroups, now.get(), aUid), aPolicyId, "/back",
+                service.loginGeneration(aUid));
         states.setPreAuth(aState, pre);
         return pre;
     }

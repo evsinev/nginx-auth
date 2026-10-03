@@ -127,6 +127,17 @@ public final class BrowserStateStore {
         aState.generation++;
     }
 
+    public void clearPreAuthForLogin(String aLoginName) {
+        for (BrowserState state : states.values()) {
+            synchronized (state) {
+                PreAuth current = state.preAuth;
+                if (current != null && current.loginName() != null && current.loginName().equalsIgnoreCase(aLoginName)) {
+                    state.preAuth = null;
+                }
+            }
+        }
+    }
+
     public void clearPreAuthForUser(String aUid) {
         for (BrowserState state : states.values()) {
             synchronized (state) {

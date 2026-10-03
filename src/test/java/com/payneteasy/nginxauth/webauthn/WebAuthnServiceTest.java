@@ -418,14 +418,46 @@ public class WebAuthnServiceTest {
         expectFailure("unknown_transaction", () -> f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null));
         assertNull(state.preAuth());
 
-        // an LDAP check done before the change cannot publish even if it raced the revocation
+        // a request that read the generation before its bind cannot publish once the password changed,
+        // even if its directory read finished after the change
+        long before = f.service.loginGeneration("alice");
+        f.service.revokeAfterPasswordChange(null, "ALICE");
         BrowserState racing = f.browser();
-        PreAuth old = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get() - 500L), "none", "/");
-        assertFalse(f.service.beginPreAuth(racing, racing.generation(), old));
-        Session oldSession = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() - 500L);
-        assertFalse(f.service.issueSession(racing, racing.generation(), oldSession).isPresent());
-        Session fresh = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 1L);
-        assertTrue(f.service.issueSession(racing, racing.generation(), fresh).isPresent());
+        com.payneteasy.nginxauth.ldap.LdapPrincipal principal =
+                new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get() + 10_000L, "alice");
+        assertFalse(f.service.beginPreAuth(racing, racing.generation(), PreAuth.create(principal, "none", "/", before)));
+        Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get() + 10_000L)
+                .withLoginName("alice");
+        assertFalse(f.service.issueSession(racing, racing.generation(), session, before).isPresent());
+        assertTrue(f.service.issueSession(racing, racing.generation(), session, f.service.loginGeneration("alice")).isPresent());
+    }
+
+    @Test
+    public void passwordChangeWithUnknownUidStopsPendingLogin() throws Exception {
+        f = new WebAuthnFixture();
+        SoftAuthenticator key = new SoftAuthenticator();
+        f.bootstrap("alice", key);
+        BrowserState state = f.ldapLogin("alice", List.of(), "none");
+        Ceremony ceremony = f.service.startLogin(state, ORIGIN);
+        String response = key.get(ceremony.publicKeyJson(), ORIGIN);
+        f.service.revokeAfterPasswordChange(null, "Alice");
+        try {
+            f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null);
+            fail("login started with the old password must not finish");
+        } catch (WebAuthnException e) {
+            assertTrue(e.reason(), e.reason().equals("preauth_changed") || e.reason().equals("password_changed"));
+        }
+    }
+
+    @Test
+    public void passwordChangeRevokesSessionPublishedJustBefore() throws Exception {
+        f = new WebAuthnFixture();
+        BrowserState state = f.browser();
+        long before = f.service.loginGeneration("bob");
+        Session session = Session.withoutWebAuthn("bob", "bob", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get()).withLoginName("Bob");
+        String token = f.service.issueSession(state, state.generation(), session, before).orElseThrow();
+        f.service.revokeAfterPasswordChange(null, "bob");
+        assertFalse(f.tokens.peekSession(token).isPresent());
     }
 
     @Test
@@ -435,11 +467,11 @@ public class WebAuthnServiceTest {
         long generation = state.generation();
         f.service.logout(state, null);
         Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get());
-        assertFalse(f.service.issueSession(state, generation, session).isPresent());
-        PreAuth pre = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get()), "none", "/");
+        assertFalse(f.service.issueSession(state, generation, session, 0L).isPresent());
+        PreAuth pre = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get()), "none", "/", 0L);
         assertFalse(f.service.beginPreAuth(state, generation, pre));
         assertNull(state.preAuth());
-        assertTrue(f.service.issueSession(state, state.generation(), session).isPresent());
+        assertTrue(f.service.issueSession(state, state.generation(), session, 0L).isPresent());
     }
 
     // ------------------------------------------------------------- bootstrap race
