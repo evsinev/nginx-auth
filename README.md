@@ -287,7 +287,10 @@ logged.
 - The password is still typed on every login; a phishing page can capture it even though it cannot finish the login.
 - TOTP secrets in `OTP_SECRETS_FILE` are still keyed by the typed username; everything else uses the LDAP `uid`.
 - Password change (`/auth/change-password`) asks for the TOTP code only from users that have a TOTP secret.
-  After the change no session is issued without the second factor the policy requires.
+  After the change no session is issued without the second factor the policy requires, and all existing
+  sessions of the account are revoked. As specified, the second factor is asked after the change, so someone
+  who knows the password of a WebAuthn-only user can change it (like any LDAP client could) and lock the user
+  out; they still get no session.
 - With `WEBAUTHN_COUNTER_POLICY=reject` a non-increasing signature counter blocks the login.
 - `/nginx-auth/api/check-*` does not do WebAuthn and does not issue sessions.
 

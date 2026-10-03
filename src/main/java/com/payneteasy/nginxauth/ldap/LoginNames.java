@@ -4,9 +4,9 @@ import java.text.Normalizer;
 import java.util.Locale;
 
 /**
- * Comparison form of a login name, close to LDAP caseIgnoreMatch (RFC 4518): Unicode NFKC, leading and
- * trailing spaces removed, inner whitespace runs collapsed to one space, case folded. Two spellings that
- * select the same bind DN compare equal.
+ * Comparison form of a login name, a conservative subset of LDAP caseIgnoreMatch (RFC 4518): Unicode NFKC,
+ * leading and trailing spaces removed, inner whitespace runs collapsed to one space, lower case. It never
+ * merges names LDAP keeps apart; a few spellings LDAP merges (e.g. ß and ss) stay different.
  */
 public final class LoginNames {
 
@@ -32,8 +32,9 @@ public final class LoginNames {
             }
             sb.append(c);
         }
-        // upper then lower approximates full case folding (ß → SS → ss), which toLowerCase alone does not do
-        return sb.toString().toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT);
+        // plain lower case on purpose: folding through upper case would merge distinct logins (ı → I → i),
+        // and merging two accounts is worse than treating two spellings of one account as different
+        return sb.toString().toLowerCase(Locale.ROOT);
     }
 
     public static boolean same(String aFirst, String aSecond) {

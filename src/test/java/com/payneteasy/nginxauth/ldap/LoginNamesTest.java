@@ -14,7 +14,10 @@ public class LoginNamesTest {
         assertTrue(LoginNames.same("Olga Smith", "olga  smith"));
         assertTrue(LoginNames.same("Olga Smith", "olga smith"));
         assertTrue(LoginNames.same("ＡＬＩＣＥ", "alice"));
-        assertTrue(LoginNames.same("Straße", "STRASSE"));
+        // distinct LDAP logins never merge
+        assertFalse(LoginNames.same("ıpek", "ipek"));
+        assertFalse(LoginNames.same("ıPEK", "ipek"));
+        assertTrue(LoginNames.same("ıPEK", "ıpek"));
         assertFalse(LoginNames.same("olga smith", "olgasmith"));
         assertFalse(LoginNames.same(null, "x"));
     }

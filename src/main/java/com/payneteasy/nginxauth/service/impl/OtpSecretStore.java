@@ -69,9 +69,12 @@ public class OtpSecretStore {
         return secrets.get(username);
     }
 
+    /** Returned by {@link #resolveName} when several stored names match: has no secret, so no code passes. */
+    public static final String AMBIGUOUS = "";
+
     /**
      * Name under which the secret of this login is stored: the exact name, else the only name that is the
-     * same login as LDAP compares it ({@link LoginNames}). Null when there is none.
+     * same login ({@link LoginNames}); {@link #AMBIGUOUS} when several match; null when there is none.
      */
     public String resolveName(String username) {
         ensureFresh();
@@ -86,8 +89,8 @@ public class OtpSecretStore {
         for (String name : current.keySet()) {
             if (LoginNames.same(name, username)) {
                 if (found != null) {
-                    // two spellings of one login in the file: still a TOTP user, pick deterministically
-                    return found.compareTo(name) <= 0 ? found : name;
+                    // never guess between two secrets: TOTP stays required and no code is accepted
+                    return AMBIGUOUS;
                 }
                 found = name;
             }
