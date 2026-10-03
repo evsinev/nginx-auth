@@ -328,6 +328,25 @@ public class WebAuthnHttpTest {
     }
 
     @Test
+    public void passwordChangeRevokesSessionsEvenIfReloginFails() throws Exception {
+        start(null, true);
+        server.user("olga", "pw");
+        server.totpUsers.put("olga", true);
+        Browser stolen = browser();
+        assertEquals(302, login(stolen, "back=%2Fapp", "olga", "pw", TestServer.TOTP_CODE).status);
+
+        server.failPrincipalAfterChange = true;
+        Browser owner = browser();
+        String csrf = owner.get("/auth?back=%2Fapp").csrf();
+        Browser.Response changed = owner.postForm("/auth/change-password", form(
+                "j_username", "olga", "j_password", "pw", "j_password_new_1", "pw2", "j_password_new_2", "pw2",
+                "j_code", TestServer.TOTP_CODE, "j_csrf", csrf, "back", "/app"));
+        assertTrue(changed.body.contains("Password changed"));
+        assertNull(owner.cookies.get("AUTH_TOKEN"));
+        assertEquals(401, authRequest(stolen, null, "/app").status);
+    }
+
+    @Test
     public void recoveryOverHttp() throws Exception {
         start(STRICT_POLICY, false);
         server.user("hank", "pw", "cn=admins,ou=groups,dc=example,dc=com");

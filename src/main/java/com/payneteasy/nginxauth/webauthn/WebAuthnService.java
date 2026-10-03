@@ -99,6 +99,9 @@ public final class WebAuthnService {
     /** Test hook: runs inside lock(uid) right before a ceremony result is committed. */
     volatile Runnable beforeCommitHook = () -> { };
 
+    /** Test hook: runs after the commit re-checks passed, holding every lock of the commit. */
+    volatile Runnable afterCheckHook = () -> { };
+
     public WebAuthnService(WebAuthnConfig aConfig, IWebAuthnCredentialRepository aRepository, ITokenManager aTokens,
                            BrowserStateStore aStates, TransactionStore aTransactions, LoginContextStore aContexts,
                            PolicyResolver aResolver, LongSupplier aClock) {
@@ -359,10 +362,12 @@ public final class WebAuthnService {
         beforeCommitHook.run();
         if (!aTx.purpose().isPreSession()) {
             checkCommit(aState, aTx);
+            afterCheckHook.run();
             return aCommit.run();
         }
         synchronized (aState) {
             checkCommit(aState, aTx);
+            afterCheckHook.run();
             return aCommit.run();
         }
     }
@@ -569,6 +574,7 @@ public final class WebAuthnService {
         Optional<Session> session = tokens.peekSession(aSessionToken);
         Runnable revoke = () -> {
             synchronized (aState) {
+                states.nextGeneration(aState);
                 tokens.invalidateToken(aSessionToken);
                 tokens.invalidateByBrowserBinding(aState.binding());
                 states.clearPreAuth(aState, null);
@@ -584,6 +590,33 @@ public final class WebAuthnService {
             revoke.run();
         }
         Audit.log("logout", "uid", session.map(Session::getCanonicalUid).orElse(null));
+    }
+
+    /**
+     * Publishes a session created without a ceremony (LDAP_ONLY, LDAP_TOTP) unless this browser logged out
+     * after the request started.
+     */
+    public Optional<String> issueSession(BrowserState aState, long aGeneration, Session aSession) {
+        synchronized (aState) {
+            if (aState.generation() != aGeneration) {
+                return Optional.empty();
+            }
+            states.clearPreAuth(aState, null);
+            transactions.cancelForBinding(aState.binding());
+            return Optional.of(tokens.createSession(aSession.boundTo(aState.binding())));
+        }
+    }
+
+    /** Starts the second step after the password unless this browser logged out after the request started. */
+    public boolean beginPreAuth(BrowserState aState, long aGeneration, PreAuth aPreAuth) {
+        synchronized (aState) {
+            if (aState.generation() != aGeneration) {
+                return false;
+            }
+            transactions.cancelForBinding(aState.binding());
+            states.setPreAuth(aState, aPreAuth);
+            return true;
+        }
     }
 
     /** Revokes every session of the user, e.g. after a password change. */

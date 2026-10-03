@@ -372,7 +372,7 @@ public class WebAuthnServiceTest {
     }
 
     @Test
-    public void concurrentLogoutDuringLoginCommitLeavesNoSession() throws Exception {
+    public void logoutRacingAPassedLoginCommitRevokesItsSession() throws Exception {
         f = new WebAuthnFixture();
         SoftAuthenticator key = new SoftAuthenticator();
         f.bootstrap("alice", key);
@@ -380,9 +380,10 @@ public class WebAuthnServiceTest {
         Ceremony ceremony = f.service.startLogin(state, ORIGIN);
         String response = key.get(ceremony.publicKeyJson(), ORIGIN);
 
-        java.util.concurrent.CountDownLatch inCommit = new java.util.concurrent.CountDownLatch(1);
-        f.service.beforeCommitHook = () -> {
-            inCommit.countDown();
+        java.util.concurrent.CountDownLatch checked = new java.util.concurrent.CountDownLatch(1);
+        // the commit has passed its re-checks and holds the browser state monitor; logout starts now
+        f.service.afterCheckHook = () -> {
+            checked.countDown();
             try {
                 Thread.sleep(200);
             } catch (InterruptedException e) {
@@ -391,24 +392,31 @@ public class WebAuthnServiceTest {
         };
         Thread logout = new Thread(() -> {
             try {
-                inCommit.await();
+                checked.await();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
             f.service.logout(state, null);
         });
         logout.start();
-        String[] token = new String[1];
-        try {
-            token[0] = ((SessionIssued) f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null)).token();
-        } catch (WebAuthnException e) {
-            assertEquals("preauth_changed", e.reason());
-        }
+        SessionIssued issued = (SessionIssued) f.service.finish(state, ORIGIN, null, "login", ceremony.transactionId(), response, null);
         logout.join();
-        if (token[0] != null) {
-            assertFalse(f.tokens.peekSession(token[0]).isPresent());
-        }
+        assertFalse(f.tokens.peekSession(issued.token()).isPresent());
         assertNull(state.preAuth());
+    }
+
+    @Test
+    public void requestStartedBeforeLogoutPublishesNothing() throws Exception {
+        f = new WebAuthnFixture();
+        BrowserState state = f.browser();
+        long generation = state.generation();
+        f.service.logout(state, null);
+        Session session = Session.withoutWebAuthn("alice", "alice", List.of(), AuthenticationMethod.LDAP_TOTP, f.now.get());
+        assertFalse(f.service.issueSession(state, generation, session).isPresent());
+        PreAuth pre = PreAuth.create(new com.payneteasy.nginxauth.ldap.LdapPrincipal("alice", "alice", List.of(), f.now.get()), "none", "/");
+        assertFalse(f.service.beginPreAuth(state, generation, pre));
+        assertNull(state.preAuth());
+        assertTrue(f.service.issueSession(state, state.generation(), session).isPresent());
     }
 
     // ------------------------------------------------------------- bootstrap race

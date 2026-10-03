@@ -17,6 +17,7 @@ public final class BrowserStateStore {
         private final String csrfToken;
         private volatile PreAuth preAuth;
         private volatile long lastSeen;
+        private volatile long generation;
 
         private BrowserState(String binding, String csrfToken, long now) {
             this.binding = binding;
@@ -34,6 +35,11 @@ public final class BrowserStateStore {
 
         public PreAuth preAuth() {
             return preAuth;
+        }
+
+        /** Grows on every logout; a request that started before a logout must not publish anything. */
+        public long generation() {
+            return generation;
         }
     }
 
@@ -114,6 +120,11 @@ public final class BrowserStateStore {
                 aState.preAuth = null;
             }
         }
+    }
+
+    /** Must be called holding the state monitor. */
+    void nextGeneration(BrowserState aState) {
+        aState.generation++;
     }
 
     public void clearPreAuthForUser(String aUid) {

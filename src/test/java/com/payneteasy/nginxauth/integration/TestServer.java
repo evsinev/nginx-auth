@@ -37,6 +37,7 @@ final class TestServer implements AutoCloseable {
     final Map<String, List<String>> groups       = new ConcurrentHashMap<>();
     final Map<String, Boolean>      mustChange   = new ConcurrentHashMap<>();
     final Map<String, Boolean>      totpUsers    = new ConcurrentHashMap<>();
+    volatile boolean                failPrincipalAfterChange;
 
     final Path            dir;
     final AppContext      app;
@@ -130,6 +131,9 @@ final class TestServer implements AutoCloseable {
             check(aUsername, aCurrentPassword);
             passwords.put(aUsername, aNewPassword);
             mustChange.remove(aUsername);
+            if (failPrincipalAfterChange) {
+                passwords.put(aUsername, aNewPassword + "-unreadable");
+            }
         }
     }
 

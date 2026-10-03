@@ -70,6 +70,7 @@ final class WebAuthnLoginFlow {
             return;
         }
         BrowserState state = stateOpt.get();
+        long generation = state.generation();
         if (!web.checkCsrf(state, aRequest.getParameter(WebAuthnWeb.CSRF_PARAM))) {
             Audit.log("csrf_rejected", "reason", "token", "path", aRequest.getRequestURI(), "ip", HttpRequestUtil.clientIp(aRequest));
             web.loginForm(aResponse, state, backFromParameter(aRequest), null, null, "Your login page has expired. Please try again.");
@@ -135,7 +136,13 @@ final class WebAuthnLoginFlow {
                     web.changePasswordForm(aResponse, state, back, contextId, username, problem);
                     return;
                 }
-                app.authService().authenticate(username, password, false);
+                String knownUid = null;
+                try {
+                    knownUid = app.authService().authenticatePrincipal(username, password).getCanonicalUid();
+                } catch (UserMustChangePasswordException e) {
+                    // expired password: the directory lets us read the principal only after the change
+                    app.authService().authenticate(username, password, false);
+                }
                 if (codeProvided) {
                     if (!app.otpService().checkCode(username, parseCode(otp))) {
                         throw new AuthenticationException("Authentication failed");
@@ -152,9 +159,22 @@ final class WebAuthnLoginFlow {
                     return;
                 }
                 LOG.warn("User {} changed password", username);
-                principal = app.authService().authenticatePrincipal(username, newPassword);
-                // a token stolen before the change must not outlive it
-                webauthn.service().revokeSessions(principal.getCanonicalUid());
+                // a token stolen before the change must not outlive it, even if the next step fails
+                if (knownUid != null) {
+                    webauthn.service().revokeSessions(knownUid);
+                }
+                try {
+                    principal = app.authService().authenticatePrincipal(username, newPassword);
+                } catch (AuthenticationException | UserMustChangePasswordException e) {
+                    if (knownUid == null && FileCredentialRepository.isValidUid(username)) {
+                        webauthn.service().revokeSessions(username);
+                    }
+                    web.loginForm(aResponse, state, back, contextId, username, "Password changed. Please log in with the new password.");
+                    return;
+                }
+                if (!principal.getCanonicalUid().equals(knownUid)) {
+                    webauthn.service().revokeSessions(principal.getCanonicalUid());
+                }
             } else {
                 principal = app.authService().authenticatePrincipal(username, password);
             }
@@ -204,11 +224,11 @@ final class WebAuthnLoginFlow {
                     return;
                 }
                 attempt.succeeded();
-                issue(aRequest, aResponse, state, principal, AuthenticationMethod.LDAP_TOTP, back, policyId);
+                issue(aRequest, aResponse, state, generation, principal, AuthenticationMethod.LDAP_TOTP, back, policyId);
             }
             case LDAP_ONLY -> {
                 attempt.succeeded();
-                issue(aRequest, aResponse, state, principal, AuthenticationMethod.LDAP_ONLY, back, policyId);
+                issue(aRequest, aResponse, state, generation, principal, AuthenticationMethod.LDAP_ONLY, back, policyId);
             }
             case CODE_REQUIRED -> {
                 attempt.succeeded();
@@ -217,8 +237,10 @@ final class WebAuthnLoginFlow {
             }
             case WEBAUTHN, RECOVERY -> {
                 attempt.succeeded();
-                webauthn.transactions().cancelForBinding(state.binding());
-                webauthn.states().setPreAuth(state, PreAuth.create(principal, policyId, back));
+                if (!webauthn.service().beginPreAuth(state, generation, PreAuth.create(principal, policyId, back))) {
+                    web.loginForm(aResponse, state, back, contextId, null, "You have logged out. Please log in again.");
+                    return;
+                }
                 LOG.info("User {} passed LDAP, second factor {}", uid, method);
                 aResponse.setStatus(HttpServletResponse.SC_SEE_OTHER);
                 aResponse.setHeader("Location", WebAuthnWeb.AUTH_URL + "/verify");
@@ -226,12 +248,15 @@ final class WebAuthnLoginFlow {
         }
     }
 
-    private void issue(HttpServletRequest aRequest, HttpServletResponse aResponse, BrowserState aState, LdapPrincipal aPrincipal,
-                       AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
-        webauthn.states().clearPreAuth(aState, null);
-        webauthn.transactions().cancelForBinding(aState.binding());
-        String token = app.tokens().createSession(Session.withoutWebAuthn(aPrincipal.getCanonicalUid(), aPrincipal.getDisplayName(),
-                aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()).boundTo(aState.binding()));
+    private void issue(HttpServletRequest aRequest, HttpServletResponse aResponse, BrowserState aState, long aGeneration,
+                       LdapPrincipal aPrincipal, AuthenticationMethod aMethod, String aBack, String aPolicyId) throws IOException {
+        Optional<String> issued = webauthn.service().issueSession(aState, aGeneration, Session.withoutWebAuthn(aPrincipal.getCanonicalUid(),
+                aPrincipal.getDisplayName(), aPrincipal.getGroups(), aMethod, aPrincipal.getLdapAuthTime()));
+        if (issued.isEmpty()) {
+            web.loginForm(aResponse, aState, aBack, null, null, "You have logged out. Please log in again.");
+            return;
+        }
+        String token = issued.get();
         Audit.log("authentication_succeeded", "uid", aPrincipal.getCanonicalUid(), "method", aMethod.name(), "policyId", aPolicyId);
         WebAuthnWeb.issueSessionCookie(aRequest, aResponse, token);
         aResponse.sendRedirect(aBack);
