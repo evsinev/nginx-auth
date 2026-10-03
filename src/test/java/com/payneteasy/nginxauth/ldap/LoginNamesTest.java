@@ -18,6 +18,9 @@ public class LoginNamesTest {
         assertTrue(LoginNames.same("Straße", "STRASSE"));
         assertTrue(LoginNames.same("ſam", "SAM"));
         assertTrue(LoginNames.same("ὀδυσσεύς", "ὈΔΥΣΣΕΎΣ"));
+        assertTrue(LoginNames.same("İstanbul", "i\u0307stanbul"));
+        // no B.2 mapping: stays itself
+        assertFalse(LoginNames.same("\u1C80", "\u0432"));
         // RFC 4518 §2.2 map: removed and space-mapped code points
         assertTrue(LoginNames.same("Alice", "Al\u00ADice"));
         assertTrue(LoginNames.same("Alice", "Al\u200Bice"));

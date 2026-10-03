@@ -14,8 +14,6 @@ import java.util.Locale;
  */
 public final class LoginNames {
 
-    private static final int DOTLESS_I = 0x0131;
-
     private LoginNames() {
     }
 
@@ -75,21 +73,53 @@ public final class LoginNames {
     }
 
     /**
-     * Case folding per code point, matching RFC 3454 table B.2 for the cases that matter here (ß → ss,
-     * ſ → s, ς → σ, İ → i̇) without the one place where upper-then-lower diverges from it: dotless ı (U+0131)
-     * has no B.2 mapping and must stay distinct from i, otherwise two accounts would merge.
+     * Case folding per code point: simple lower case, plus the RFC 3454 B.2 mappings that lower case does not
+     * produce. No round trip through upper case, so letters without a B.2 mapping stay as they are (dotless ı
+     * does not become i, U+1C80 does not become в). Compatibility forms (ligatures, ﬀ) are handled by NFKC.
      */
     static String fold(String aValue) {
         StringBuilder sb = new StringBuilder(aValue.length());
         aValue.codePoints().forEach(cp -> {
-            if (cp == DOTLESS_I) {
-                sb.appendCodePoint(cp);
+            if (cp == 0x0130) {
+                sb.append("i\u0307");
+                return;
+            }
+            int lower = Character.toLowerCase(cp);
+            String special = FULL_FOLDS.get(lower);
+            if (special != null) {
+                sb.append(special);
             } else {
-                sb.append(new String(Character.toChars(cp)).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT));
+                sb.appendCodePoint(lower);
             }
         });
         return sb.toString();
     }
+
+    /** RFC 3454 B.2 entries for code points that are already lower case (or become so) but still fold. */
+    private static final java.util.Map<Integer, String> FULL_FOLDS = java.util.Map.ofEntries(
+            java.util.Map.entry(0x00DF, "ss"),            // ß
+            java.util.Map.entry(0x0149, "\u02BCn"),       // ŉ
+            java.util.Map.entry(0x017F, "s"),             // ſ
+            java.util.Map.entry(0x01F0, "j\u030C"),       // ǰ
+            java.util.Map.entry(0x0345, "\u03B9"),        // combining ypogegrammeni → ι
+            java.util.Map.entry(0x0390, "\u03B9\u0308\u0301"),
+            java.util.Map.entry(0x03B0, "\u03C5\u0308\u0301"),
+            java.util.Map.entry(0x03C2, "\u03C3"),        // ς → σ
+            java.util.Map.entry(0x03D0, "\u03B2"),        // ϐ → β
+            java.util.Map.entry(0x03D1, "\u03B8"),        // ϑ → θ
+            java.util.Map.entry(0x03D5, "\u03C6"),        // ϕ → φ
+            java.util.Map.entry(0x03D6, "\u03C0"),        // ϖ → π
+            java.util.Map.entry(0x03F0, "\u03BA"),        // ϰ → κ
+            java.util.Map.entry(0x03F1, "\u03C1"),        // ϱ → ρ
+            java.util.Map.entry(0x03F5, "\u03B5"),        // ϵ → ε
+            java.util.Map.entry(0x0587, "\u0565\u0582"), // և
+            java.util.Map.entry(0x1E96, "h\u0331"),
+            java.util.Map.entry(0x1E97, "t\u0308"),
+            java.util.Map.entry(0x1E98, "w\u030A"),
+            java.util.Map.entry(0x1E99, "y\u030A"),
+            java.util.Map.entry(0x1E9A, "a\u02BE"),
+            java.util.Map.entry(0x1E9B, "\u1E61")         // ẛ → ṡ
+    );
 
     public static boolean same(String aFirst, String aSecond) {
         return aFirst != null && aSecond != null && normalize(aFirst).equals(normalize(aSecond));
