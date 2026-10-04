@@ -16,10 +16,12 @@ public class NginxAuthRequestCheckServlet extends HttpServlet {
 
     private static final Logger LOG = LoggerFactory.getLogger( NginxAuthRequestCheckServlet.class );
 
-    private final AccessGate accessGate;
+    private final AccessGate      accessGate;
+    private final IdentityHeaders identityHeaders;
 
     public NginxAuthRequestCheckServlet(AppContext aApp) {
         accessGate = new AccessGate(aApp);
+        identityHeaders = IdentityHeaders.fromSettings();
     }
 
     @Override
@@ -28,7 +30,10 @@ public class NginxAuthRequestCheckServlet extends HttpServlet {
 
         AccessGate.Result result = accessGate.evaluate(aRequest, aResponse, aRequest.getHeader("X-Original-URI"));
         switch (result.outcome()) {
-            case ALLOW -> aResponse.setStatus(HttpServletResponse.SC_OK);
+            case ALLOW -> {
+                aResponse.setStatus(HttpServletResponse.SC_OK);
+                identityHeaders.write(result.session(), aResponse);
+            }
             case FORBIDDEN -> aResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
             case LOGIN -> {
                 LOG.warn("Bad token for url {}", aRequest.getRequestURL());

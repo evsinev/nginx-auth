@@ -1,8 +1,8 @@
 package com.payneteasy.nginxauth.policy;
 
-import javax.naming.InvalidNameException;
+import com.payneteasy.nginxauth.ldap.GroupNames;
+
 import javax.naming.ldap.LdapName;
-import javax.naming.ldap.Rdn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -65,47 +65,23 @@ public final class PolicyResolver {
     }
 
     static boolean memberOf(List<String> aGroups, String aPolicyGroup) {
-        LdapName policyDn = parseDn(aPolicyGroup);
+        LdapName policyDn = GroupNames.parseDn(aPolicyGroup);
         for (String group : aGroups) {
             if (group.equalsIgnoreCase(aPolicyGroup)) {
                 return true;
             }
-            LdapName groupDn = parseDn(group);
+            LdapName groupDn = GroupNames.parseDn(group);
             if (groupDn == null) {
                 continue;
             }
             if (policyDn != null && policyDn.size() > 1 && policyDn.equals(groupDn)) {
                 return true;
             }
-            String cn = leftmostCn(groupDn);
+            String cn = GroupNames.leftmostCn(groupDn);
             if (cn != null && cn.equalsIgnoreCase(aPolicyGroup)) {
                 return true;
             }
         }
         return false;
-    }
-
-    private static String leftmostCn(LdapName aDn) {
-        if (aDn.size() == 0) {
-            return null;
-        }
-        // LdapName indexes RDNs right to left: the leftmost RDN is the last one
-        Rdn rdn = aDn.getRdn(aDn.size() - 1);
-        if (!"cn".equalsIgnoreCase(rdn.getType())) {
-            return null;
-        }
-        Object value = rdn.getValue();
-        return value == null ? null : value.toString();
-    }
-
-    private static LdapName parseDn(String aValue) {
-        if (aValue == null || aValue.indexOf('=') < 0) {
-            return null;
-        }
-        try {
-            return new LdapName(aValue);
-        } catch (InvalidNameException | IllegalArgumentException e) {
-            return null;
-        }
     }
 }

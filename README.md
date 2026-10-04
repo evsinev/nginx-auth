@@ -96,6 +96,42 @@ This service provides a secure way to protect your nginx-hosted web applications
 
 nginx **must** overwrite `X-Real-IP`. If that header is missing, IP throttle is skipped and only the per-username limit applies (otherwise every client behind nginx shares `127.0.0.1`). Use `limit_req` in nginx in addition to the in-process limiter.
 
+### Identity headers for the backend
+
+On 200 `/auth/nginx-auth-request-check` returns who is logged in, so nginx can pass it to the backend.
+The example below uses `/nginx-auth-request-check` and `@login` from
+[nginx with login context and policy id](#nginx-with-login-context-and-policy-id).
+
+- `X-Auth-User`: the LDAP `uid` (`[A-Za-z0-9][A-Za-z0-9._@-]{0,127}`). With `WEBAUTHN_ENABLED=false` it is
+  the login name as typed, since that mode does not read the directory entry.
+- `X-Auth-Groups`: comma-separated short names of the groups, the leftmost `cn` of each `memberOf` DN
+  (`cn=wk-admins,ou=groups,…` → `wk-admins`), without duplicates. Only with `WEBAUTHN_ENABLED=true`; groups
+  are read at login and stay until the next login.
+
+A value that cannot go into a header safely is dropped with a WARN, never escaped: no `X-Auth-User` for such
+a uid, and such a group is left out (`[A-Za-z0-9][A-Za-z0-9._-]{0,127}`; a `cn` with a comma, a space or
+non-ASCII). No groups — no `X-Auth-Groups`. 401 and 403 carry no identity. Header names are set by
+`AUTH_REQUEST_USER_HEADER` / `AUTH_REQUEST_GROUPS_HEADER`; an empty value turns the header off.
+
+```nginx
+location ^~ /wellknown-ui/ {
+    auth_request     /nginx-auth-request-check;
+    auth_request_set $login_ctx   $upstream_http_x_login_context;
+    auth_request_set $auth_user   $upstream_http_x_auth_user;
+    auth_request_set $auth_groups $upstream_http_x_auth_groups;
+    error_page       401 = @login;
+
+    proxy_pass       http://127.0.0.1:27102/;
+    # always overwrite: client X-Auth-* never reach the backend
+    proxy_set_header X-Auth-User   $auth_user;
+    proxy_set_header X-Auth-Groups $auth_groups;
+}
+```
+
+nginx **must** overwrite both headers in every location that passes them. `proxy_set_header` with an empty
+variable drops the header, so the backend gets either the value from nginx-auth or nothing. Without
+`auth_request_set` the headers stay in the subrequest and go nowhere.
+
 ### LDAP password policy
 
 Limiter thresholds and LDAP ppolicy must be tuned together. The limiter only sees nginx-auth traffic; other LDAP clients still increment the same failure counter.
@@ -340,6 +376,9 @@ logged.
 | WEBAUTHN_POLICY_HEADER     | X-Policy-Id                | Header with `policyId` from nginx |
 | WEBAUTHN_ADMIN_TOKEN       |                            | Admin CLI token (≥ 32 chars); enables the admin API |
 | WEBAUTHN_ADMIN_PORT        | 9092                       | Admin API port on 127.0.0.1      |
+| AUTH_REQUEST_USER_HEADER   | X-Auth-User                | uid on 200 from `nginx-auth-request-check`; empty: off |
+| AUTH_REQUEST_GROUPS_HEADER | X-Auth-Groups              | Short group names on 200; empty: off |
 
 Startup fails when `WEBAUTHN_ENABLED=false` but the policy file has WebAuthn requirements, when an origin is not
-under the RP ID, or when the policy file or the credential directory is invalid.
+under the RP ID, when the policy file or the credential directory is invalid, or when
+`AUTH_REQUEST_USER_HEADER` / `AUTH_REQUEST_GROUPS_HEADER` is not a valid header name.

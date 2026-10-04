@@ -29,7 +29,10 @@ final class AccessGate {
 
     enum Outcome { ALLOW, LOGIN, FORBIDDEN }
 
-    record Result(Outcome outcome, String contextId) {
+    /**
+     * @param session the session that was allowed; {@code null} unless {@code outcome} is {@code ALLOW}
+     */
+    record Result(Outcome outcome, String contextId, Session session) {
     }
 
     private final AppContext app;
@@ -45,7 +48,8 @@ final class AccessGate {
         String token = new CookiesManager(aRequest, aResponse).getCookieValue(SettingsManager.getTokenCookieName());
         WebAuthnContext webauthn = app.webauthn();
         if (webauthn == null) {
-            return new Result(app.tokens().validateToken(token) ? Outcome.ALLOW : Outcome.LOGIN, null);
+            Optional<Session> session = app.tokens().getSession(token);
+            return session.isPresent() ? new Result(Outcome.ALLOW, null, session.get()) : new Result(Outcome.LOGIN, null, null);
         }
 
         String header = aRequest.getHeader(webauthn.config().getPolicyHeader());
@@ -53,7 +57,7 @@ final class AccessGate {
         if (!webauthn.resolver().isKnownPolicyId(policyId)) {
             LOG.error("Missing or unknown {} from nginx; check the nginx location config", webauthn.config().getPolicyHeader());
             Audit.log("access_denied_by_policy", "reason", "unknown_policy_id", "ip", HttpRequestUtil.clientIp(aRequest));
-            return new Result(Outcome.FORBIDDEN, null);
+            return new Result(Outcome.FORBIDDEN, null, null);
         }
         if (policyId == null || policyId.isEmpty() || !webauthn.resolver().locationPoliciesEnabled()) {
             policyId = PolicySet.NONE_POLICY_ID;
@@ -63,7 +67,7 @@ final class AccessGate {
         if (session.isPresent()) {
             AccessChecker.Decision decision = webauthn.accessChecker().check(session.get(), policyId);
             if (decision == AccessChecker.Decision.ALLOW) {
-                return new Result(Outcome.ALLOW, null);
+                return new Result(Outcome.ALLOW, null, session.get());
             }
             Audit.log("access_denied_by_policy", "uid", session.get().getCanonicalUid(), "policyId", policyId,
                     "decision", decision.name().toLowerCase(), "method", session.get().getMethod().name());
@@ -78,6 +82,6 @@ final class AccessGate {
         // an empty header still makes nginx redirect with ctx=, which the login page rejects instead of
         // silently falling back to policyId=none
         aResponse.setHeader(LOGIN_CONTEXT_HEADER, contextId.orElse(""));
-        return new Result(Outcome.LOGIN, contextId.orElse(""));
+        return new Result(Outcome.LOGIN, contextId.orElse(""), null);
     }
 }

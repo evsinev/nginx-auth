@@ -30,7 +30,7 @@ public final class Audit {
         return SecureTokens.shortHash(aCredentialId);
     }
 
-    static String clean(String aValue) {
+    public static String clean(String aValue) {
         if (aValue == null) {
             return "-";
         }

@@ -59,20 +59,31 @@ public class SettingsManager {
         , WEBAUTHN_POLICY_HEADER     ( "X-Policy-Id"                )
         , WEBAUTHN_ADMIN_TOKEN       ( "", true                     )
         , WEBAUTHN_ADMIN_PORT        ( "9092"                       )
+        , AUTH_REQUEST_USER_HEADER   ( "X-Auth-User"  , false, true )
+        , AUTH_REQUEST_GROUPS_HEADER ( "X-Auth-Groups", false, true )
         ;
 
         Setting(String aDefaultValue) {
-            defaultValue = aDefaultValue;
-            secure = false;
+            this(aDefaultValue, false);
         }
 
         Setting(String defaultValue, boolean secure) {
+            this(defaultValue, secure, false);
+        }
+
+        /**
+         * @param emptyAllowed an explicitly set empty value is kept (turns the feature off) instead of
+         *                     falling back to the default
+         */
+        Setting(String defaultValue, boolean secure, boolean emptyAllowed) {
             this.defaultValue = defaultValue;
             this.secure       = secure;
+            this.emptyAllowed = emptyAllowed;
         }
 
         private final String  defaultValue;
         private final boolean secure;
+        private final boolean emptyAllowed;
     }
 
     public static void logCurrentSettings() {
@@ -106,12 +117,18 @@ public class SettingsManager {
             if (hasText(propertyValue)) {
                 return propertyValue;
             }
+            if (aSetting.emptyAllowed && propertyValue != null) {
+                return "";
+            }
         }
 
         {
             String envValue = System.getenv(aSetting.name());
             if (hasText(envValue)) {
                 return envValue;
+            }
+            if (aSetting.emptyAllowed && envValue != null) {
+                return "";
             }
         }
 
@@ -268,6 +285,14 @@ public class SettingsManager {
 
     public static String getWebAuthnAdminPort() {
         return get(WEBAUTHN_ADMIN_PORT);
+    }
+
+    public static String getAuthRequestUserHeader() {
+        return get(AUTH_REQUEST_USER_HEADER).trim();
+    }
+
+    public static String getAuthRequestGroupsHeader() {
+        return get(AUTH_REQUEST_GROUPS_HEADER).trim();
     }
 
     public static Set<String> getAccessTokens() {
