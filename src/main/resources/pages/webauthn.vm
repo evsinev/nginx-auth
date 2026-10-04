@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>$TITLE</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+#parse("pages/_style.vm")
+    <script type="text/javascript" src="$AUTH_URL/static/webauthn.js" defer></script>
+</head>
+<body data-auth-url="$AUTH_URL" data-csrf="$!CSRF" data-mode="$MODE" data-ctx="$!CTX">
+<div class="page">
+
+    <h2>$TITLE</h2>
+
+    <div class="message">$MESSAGE</div>
+
+    #if ( $MODE == "recovery" )
+    <form action="$AUTH_URL/recovery" method="post">
+        <input type="hidden" name="j_csrf" value="$!CSRF">
+        <div class="row">
+            <label class='form-label' for="j_secret">Enrollment secret</label>
+            <input class='form-input-text' name="j_secret" id="j_secret" type="password" autocomplete="off" value="" maxlength="128">
+        </div>
+        <div class="button-row">
+            <input type="submit" class="button" value="Continue">
+        </div>
+    </form>
+    #else
+    #if ( $MODE == "recovery_enroll" )
+    <div class="row">
+        <label class='form-label' for="key-name">Name for the new key</label>
+        <input class='form-input-text' id="key-name" type="text" value="" maxlength="64">
+    </div>
+    #end
+    <div class="reason" id="webauthn-error" hidden></div>
+    <div class="ok" id="webauthn-status" hidden></div>
+    <div class="button-row">
+        <input type="button" class="button" id="webauthn-start" value="#if ( $MODE == "recovery_enroll" )Register security key#else Use security key#end">
+    </div>
+    #end
+
+    <div class="links">
+        #if ( $SHOW_RECOVERY )
+        <a href="$AUTH_URL/verify?recovery=1">Lost your security key? Enter an enrollment secret</a><br>
+        #end
+        <a href="$AUTH_URL?$BACK_URL_NAME=$BACK_ENCODED">Log in again</a>
+    </div>
+</div>
+</body>
+</html>

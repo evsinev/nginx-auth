@@ -1,0 +1,59 @@
+package com.payneteasy.nginxauth.webauthn;
+
+import com.payneteasy.nginxauth.policy.EffectivePolicy;
+
+/**
+ * Chooses the second factor after a successful LDAP check. A WebAuthn failure never falls back to TOTP:
+ * the TOTP branch is reachable only when the policy does not require WebAuthn.
+ */
+public final class MethodSelector {
+
+    public enum Method {
+        WEBAUTHN,
+        /** WebAuthn required but no usable credential: only an enrollment grant can help. */
+        RECOVERY,
+        TOTP,
+        /** TOTP is the only option and no code was entered. */
+        CODE_REQUIRED,
+        LDAP_ONLY,
+        DENY
+    }
+
+    private MethodSelector() {
+    }
+
+    /**
+     * @param aCredentialsKnown false when the credential storage is unavailable: then nothing that depends on
+     *                          "the user has no security key" may be chosen
+     * @param aHasUsableGrant   an enrollment grant exists, so recovery is offered instead of a dead end
+     */
+    public static Method select(EffectivePolicy aPolicy, boolean aOtpEnabled, boolean aCodeProvided,
+                                boolean aHasEligibleCredentials, boolean aWebAuthnUsable, boolean aCredentialsKnown,
+                                boolean aHasUsableGrant) {
+        if (aPolicy.denyAll()) {
+            return Method.DENY;
+        }
+        if (aPolicy.requireWebAuthn()) {
+            if (!aWebAuthnUsable || !aCredentialsKnown) {
+                return Method.DENY;
+            }
+            return aHasEligibleCredentials ? Method.WEBAUTHN : Method.RECOVERY;
+        }
+        if (aOtpEnabled && aCodeProvided) {
+            return Method.TOTP;
+        }
+        if (!aCredentialsKnown) {
+            return Method.DENY;
+        }
+        if (aHasEligibleCredentials && aWebAuthnUsable) {
+            return Method.WEBAUTHN;
+        }
+        if (aHasUsableGrant && aWebAuthnUsable) {
+            return Method.RECOVERY;
+        }
+        if (aOtpEnabled) {
+            return Method.CODE_REQUIRED;
+        }
+        return Method.LDAP_ONLY;
+    }
+}

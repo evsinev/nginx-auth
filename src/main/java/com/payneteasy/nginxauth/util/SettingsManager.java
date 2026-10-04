@@ -42,20 +42,48 @@ public class SettingsManager {
         , LOGIN_FAILURE_WINDOW_SECONDS ( "900"                      )
         , LOGIN_MAX_CONCURRENT_DELAYS ( "32"                        )
         , CLIENT_IP_HEADER           ( "X-Real-IP"                  )
+        , LDAP_UID_ATTRIBUTE         ( "uid"                        )
+        , LDAP_DISPLAY_NAME_ATTRIBUTE ( "displayName"               )
+        , LDAP_GROUPS_ATTRIBUTE      ( "memberOf"                   )
+        , WEBAUTHN_ENABLED           ( "false"                      )
+        , WEBAUTHN_RP_ID             ( ""                           )
+        , WEBAUTHN_RP_NAME           ( "nginx-auth"                 )
+        , WEBAUTHN_ALLOWED_ORIGINS   ( ""                           )
+        , WEBAUTHN_STORAGE_DIR       ( "./webauthn"                 )
+        , WEBAUTHN_CHALLENGE_TTL     ( "120"                        )
+        , WEBAUTHN_PREAUTH_TTL       ( "300"                        )
+        , WEBAUTHN_FRESH_AUTH_AGE    ( "300"                        )
+        , WEBAUTHN_LOGIN_CONTEXT_TTL ( "300"                        )
+        , WEBAUTHN_COUNTER_POLICY    ( "reject"                     )
+        , WEBAUTHN_POLICY_FILE       ( ""                           )
+        , WEBAUTHN_POLICY_HEADER     ( "X-Policy-Id"                )
+        , WEBAUTHN_ADMIN_TOKEN       ( "", true                     )
+        , WEBAUTHN_ADMIN_PORT        ( "9092"                       )
+        , AUTH_REQUEST_USER_HEADER   ( "X-Auth-User"  , false, true )
+        , AUTH_REQUEST_GROUPS_HEADER ( "X-Auth-Groups", false, true )
         ;
 
         Setting(String aDefaultValue) {
-            defaultValue = aDefaultValue;
-            secure = false;
+            this(aDefaultValue, false);
         }
 
         Setting(String defaultValue, boolean secure) {
+            this(defaultValue, secure, false);
+        }
+
+        /**
+         * @param emptyAllowed an explicitly set empty value is kept (turns the feature off) instead of
+         *                     falling back to the default
+         */
+        Setting(String defaultValue, boolean secure, boolean emptyAllowed) {
             this.defaultValue = defaultValue;
             this.secure       = secure;
+            this.emptyAllowed = emptyAllowed;
         }
 
         private final String  defaultValue;
         private final boolean secure;
+        private final boolean emptyAllowed;
     }
 
     public static void logCurrentSettings() {
@@ -89,12 +117,18 @@ public class SettingsManager {
             if (hasText(propertyValue)) {
                 return propertyValue;
             }
+            if (aSetting.emptyAllowed && propertyValue != null) {
+                return "";
+            }
         }
 
         {
             String envValue = System.getenv(aSetting.name());
             if (hasText(envValue)) {
                 return envValue;
+            }
+            if (aSetting.emptyAllowed && envValue != null) {
+                return "";
             }
         }
 
@@ -183,6 +217,82 @@ public class SettingsManager {
 
     public static String getClientIpHeader() {
         return get(CLIENT_IP_HEADER);
+    }
+
+    public static String getLdapUidAttribute() {
+        return get(LDAP_UID_ATTRIBUTE);
+    }
+
+    public static String getLdapDisplayNameAttribute() {
+        return get(LDAP_DISPLAY_NAME_ATTRIBUTE);
+    }
+
+    public static String getLdapGroupsAttribute() {
+        return get(LDAP_GROUPS_ATTRIBUTE);
+    }
+
+    public static boolean isWebAuthnEnabled() {
+        return getBoolean(WEBAUTHN_ENABLED);
+    }
+
+    public static String getWebAuthnRpId() {
+        return get(WEBAUTHN_RP_ID);
+    }
+
+    public static String getWebAuthnRpName() {
+        return get(WEBAUTHN_RP_NAME);
+    }
+
+    public static String getWebAuthnAllowedOrigins() {
+        return get(WEBAUTHN_ALLOWED_ORIGINS);
+    }
+
+    public static String getWebAuthnStorageDir() {
+        return get(WEBAUTHN_STORAGE_DIR);
+    }
+
+    public static String getWebAuthnChallengeTtl() {
+        return get(WEBAUTHN_CHALLENGE_TTL);
+    }
+
+    public static String getWebAuthnPreauthTtl() {
+        return get(WEBAUTHN_PREAUTH_TTL);
+    }
+
+    public static String getWebAuthnFreshAuthAge() {
+        return get(WEBAUTHN_FRESH_AUTH_AGE);
+    }
+
+    public static String getWebAuthnLoginContextTtl() {
+        return get(WEBAUTHN_LOGIN_CONTEXT_TTL);
+    }
+
+    public static String getWebAuthnCounterPolicy() {
+        return get(WEBAUTHN_COUNTER_POLICY);
+    }
+
+    public static String getWebAuthnPolicyFile() {
+        return get(WEBAUTHN_POLICY_FILE);
+    }
+
+    public static String getWebAuthnPolicyHeader() {
+        return get(WEBAUTHN_POLICY_HEADER);
+    }
+
+    public static String getWebAuthnAdminToken() {
+        return get(WEBAUTHN_ADMIN_TOKEN);
+    }
+
+    public static String getWebAuthnAdminPort() {
+        return get(WEBAUTHN_ADMIN_PORT);
+    }
+
+    public static String getAuthRequestUserHeader() {
+        return get(AUTH_REQUEST_USER_HEADER).trim();
+    }
+
+    public static String getAuthRequestGroupsHeader() {
+        return get(AUTH_REQUEST_GROUPS_HEADER).trim();
     }
 
     public static Set<String> getAccessTokens() {
