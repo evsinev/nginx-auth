@@ -55,6 +55,19 @@ public class CookiesManager {
         theResponse.addCookie(cookie);
     }
 
+    /**
+     * Browser binding cookie: always Secure, SameSite=Strict, scoped to the auth path.
+     */
+    public void addBinding(String aKey, String aValue, String aPath) {
+        Cookie cookie = new Cookie(aKey, aValue);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setAttribute("SameSite", "Strict");
+        cookie.setPath(aPath);
+        cookie.setMaxAge(-1);
+        theResponse.addCookie(cookie);
+    }
+
     public boolean hasCookie(String aCookieName) {
         return getCookieValue(aCookieName) != null;
     }

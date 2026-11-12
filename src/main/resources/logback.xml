@@ -8,6 +8,12 @@
     </encoder>
   </appender>
 
+  <!-- security events: event=... key=value -->
+  <logger name="nginx-auth.audit" level="info" />
+
+  <!-- library messages may carry request details; keep them at WARN -->
+  <logger name="com.yubico" level="warn" />
+
   <root level="info">
     <appender-ref ref="STDOUT" />
   </root>

@@ -64,6 +64,11 @@ public class OneTimePasswordServiceImpl implements IOneTimePasswordService {
         theGoogleAuthenticator.check_code(store.dummySecret(), aCode, now);
     }
 
+    @Override
+    public boolean hasSecret(String aUsername) {
+        return store.getSecret(aUsername) != null;
+    }
+
     int codeAt(String secret, long timeMsec) {
         return theGoogleAuthenticator.codeAt(secret, timeMsec);
     }

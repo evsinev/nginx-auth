@@ -1,10 +1,8 @@
 package com.payneteasy.nginxauth.servlet;
 
+import com.payneteasy.nginxauth.AppContext;
 import com.payneteasy.nginxauth.service.*;
-import com.payneteasy.nginxauth.service.impl.AuthServiceImpl;
-import com.payneteasy.nginxauth.service.impl.NonceManagerImpl;
 import com.payneteasy.nginxauth.service.impl.RateLimiter;
-import com.payneteasy.nginxauth.service.impl.TokenManagerImpl;
 import com.payneteasy.nginxauth.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +18,6 @@ public class LoginFormServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(LoginFormServlet.class);
 
     private static final String  BACK_URL_NAME = SettingsManager.getBackUrlName();
-    private static final boolean OTP_ENABLED   = SettingsManager.isOtpEnabled();
 
     static final int MAX_USERNAME = 256;
     static final int MAX_PASSWORD = 1024;
@@ -28,8 +25,20 @@ public class LoginFormServlet extends HttpServlet {
     static final int MAX_BACK     = 2048;
     static final int MAX_NONCE    = 64;
 
+    public LoginFormServlet(AppContext aApp) {
+        theAuthService  = aApp.authService();
+        theTokenManager = aApp.tokens();
+        theNonceManager = aApp.nonces();
+        theOtpEnabled   = aApp.otpEnabled();
+        theWebAuthnFlow = aApp.webauthn() == null ? null : new WebAuthnLoginFlow(new WebAuthnWeb(aApp));
+    }
+
     @Override
     protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
+        if (theWebAuthnFlow != null) {
+            theWebAuthnFlow.handle(aRequest, aResponse, isChangePassword());
+            return;
+        }
         HttpRequestUtil.logDebug(aRequest);
 
         String backRaw  = aRequest.getParameter(BACK_URL_NAME);
@@ -93,7 +102,7 @@ public class LoginFormServlet extends HttpServlet {
         }
 
         try {
-            if (OTP_ENABLED) {
+            if (theOtpEnabled) {
                 if (tooLong(otp, MAX_OTP)) {
                     showErrorForm(aResponse, backUrl, username, "Verification code is invalid");
                     return;
@@ -159,6 +168,10 @@ public class LoginFormServlet extends HttpServlet {
         return true;
     }
 
+    boolean isChangePassword() {
+        return false;
+    }
+
     public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
 
     }
@@ -181,14 +194,16 @@ public class LoginFormServlet extends HttpServlet {
         velocity.add("FORM_ACTION"    , aAction                     );
         velocity.add("REASON"         , aErrorMessage               );
         velocity.add("USERNAME"       , aUsername                   );
-        velocity.add("OTP_ENABLED"    , OTP_ENABLED                 );
+        velocity.add("OTP_ENABLED"    , theOtpEnabled               );
         putNonce(velocity, theNonceManager);
 
         velocity.processTemplate(LoginFormServlet.class, aFormTemplate, aResponse.getWriter());
     }
 
-    final IAuthService theAuthService = new AuthServiceImpl();
-    private ITokenManager theTokenManager = TokenManagerImpl.getInstance();
-    private INonceManager theNonceManager = NonceManagerImpl.getInstance();
+    final IAuthService theAuthService;
+    private final ITokenManager theTokenManager;
+    private final INonceManager theNonceManager;
+    private final boolean theOtpEnabled;
+    private final WebAuthnLoginFlow theWebAuthnFlow;
 
 }

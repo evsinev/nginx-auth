@@ -75,5 +75,10 @@ public class AuthServiceImplTest {
         public void dummyCheck(long aCode) {
             dummyChecks.incrementAndGet();
         }
+
+        @Override
+        public boolean hasSecret(String aUsername) {
+            return true;
+        }
     }
 }

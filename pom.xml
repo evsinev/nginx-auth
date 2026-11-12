@@ -100,6 +100,19 @@
         </dependency>
 
         <dependency>
+            <groupId>com.yubico</groupId>
+            <artifactId>webauthn-server-core</artifactId>
+            <version>2.10.0</version>
+        </dependency>
+
+        <!-- webauthn-server-core declares Jackson as runtime, but its public API throws JsonProcessingException -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.22.3</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
@@ -150,6 +163,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.0</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- integration tests send the Host header nginx would forward -->
+                        <jdk.httpclient.allowRestrictedHeaders>host</jdk.httpclient.allowRestrictedHeaders>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
 
             <plugin>

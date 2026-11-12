@@ -8,4 +8,6 @@ public interface IOneTimePasswordService {
     boolean checkCode(String aUsername, long aCode);
 
     void dummyCheck(long aCode);
+
+    boolean hasSecret(String aUsername);
 }

@@ -1,5 +1,6 @@
 package com.payneteasy.nginxauth.servlet;
 
+import com.payneteasy.nginxauth.AppContext;
 import com.payneteasy.nginxauth.service.ChangePasswordException;
 import com.payneteasy.nginxauth.util.StringUtils;
 import org.slf4j.Logger;
@@ -11,6 +12,10 @@ import jakarta.servlet.http.HttpServletRequest;
 public class ChangePasswordServlet extends LoginFormServlet {
 
     private static final Logger LOG = LoggerFactory.getLogger(ChangePasswordServlet.class);
+
+    public ChangePasswordServlet(AppContext aApp) {
+        super(aApp);
+    }
 
     @Override
     public void doCustomAction(String aUsername, String aCurrentPassword, HttpServletRequest aRequest) throws ChangePasswordException {
@@ -41,6 +46,11 @@ public class ChangePasswordServlet extends LoginFormServlet {
 
     public boolean canCheckAccess() {
         return false;
+    }
+
+    @Override
+    boolean isChangePassword() {
+        return true;
     }
 
 }

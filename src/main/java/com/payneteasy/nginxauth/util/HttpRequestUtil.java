@@ -65,7 +65,7 @@ public class HttpRequestUtil {
             return value;
         }
         String lower = name.toLowerCase(Locale.ROOT);
-        if ("authorization".equals(lower) || "cookie".equals(lower) || "set-cookie".equals(lower)) {
+        if ("authorization".equals(lower) || "cookie".equals(lower) || "set-cookie".equals(lower) || "x-csrf-token".equals(lower)) {
             return "***";
         }
         return value;
@@ -79,7 +79,11 @@ public class HttpRequestUtil {
         if ("j_password".equals(lower)
                 || "j_password_new_1".equals(lower)
                 || "j_password_new_2".equals(lower)
-                || "j_code".equals(lower)) {
+                || "j_code".equals(lower)
+                || "j_secret".equals(lower)
+                || "j_csrf".equals(lower)
+                || "j_nonce".equals(lower)
+                || "ctx".equals(lower)) {
             return "***";
         }
         String tokenCookie = SettingsManager.getTokenCookieName();
